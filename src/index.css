@@ -1,0 +1,206 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Atelier Alif Design System */
+    --font-display: 'Plus Jakarta Sans', sans-serif;
+    --font-body: 'IBM Plex Sans', sans-serif;
+
+    /* Inkwell - Primary Structure */
+    --background: 210 20% 97%; /* Quill #F5F7FA */
+    --foreground: 213 73% 15%; /* Inkwell #0A2540 */
+
+    /* Canvas - Cards & Inputs */
+    --card: 0 0% 100%;
+    --card-foreground: 213 73% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 213 73% 15%;
+
+    /* Action Blue #0066FF */
+    --primary: 220 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 213 73% 15%;
+
+    --muted: 210 15% 93%;
+    --muted-foreground: 213 15% 50%;
+
+    --accent: 210 20% 94%;
+    --accent-foreground: 213 73% 15%;
+
+    /* Success Green #17C964 */
+    --success: 152 79% 44%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 18% 90%;
+    --input: 210 18% 90%;
+    --ring: 220 100% 50%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 213 73% 15%;
+    --sidebar-primary: 220 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 94%;
+    --sidebar-accent-foreground: 213 73% 15%;
+    --sidebar-border: 210 18% 90%;
+    --sidebar-ring: 220 100% 50%;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(213 73% 15% / 0.04);
+    --shadow-md: 0 4px 12px -2px hsl(213 73% 15% / 0.06), 0 2px 4px -2px hsl(213 73% 15% / 0.04);
+    --shadow-lg: 0 12px 32px -4px hsl(213 73% 15% / 0.08), 0 4px 8px -2px hsl(213 73% 15% / 0.04);
+    --shadow-card: 0 1px 3px hsl(213 73% 15% / 0.04), 0 1px 2px hsl(213 73% 15% / 0.06);
+  }
+
+  .dark {
+    --background: 213 73% 8%;
+    --foreground: 210 20% 95%;
+    --card: 213 60% 12%;
+    --card-foreground: 210 20% 95%;
+    --popover: 213 60% 12%;
+    --popover-foreground: 210 20% 95%;
+    --primary: 220 100% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 213 40% 18%;
+    --secondary-foreground: 210 20% 95%;
+    --muted: 213 30% 20%;
+    --muted-foreground: 210 15% 60%;
+    --accent: 213 40% 18%;
+    --accent-foreground: 210 20% 95%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 213 30% 20%;
+    --input: 213 30% 20%;
+    --ring: 220 100% 55%;
+    --sidebar-background: 213 73% 8%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 220 100% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 213 40% 18%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 213 30% 20%;
+    --sidebar-ring: 220 100% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-body {
+    font-family: var(--font-body);
+  }
+}
+
+/* TipTap Editor Styles */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+
+.tiptap {
+  outline: none;
+}
+
+/* First H2 = Name (large title, no border) */
+.tiptap h2:first-child {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-top: 0;
+  margin-bottom: 0.15rem;
+  color: hsl(var(--foreground));
+  border-bottom: none;
+  padding-bottom: 0;
+  text-align: center;
+}
+
+/* H3 right after first H2 = Job Title */
+.tiptap h2:first-child + h3 {
+  font-size: 1rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  margin-top: 0;
+  margin-bottom: 0.25rem;
+  text-align: center;
+}
+
+/* Contact paragraphs before HR */
+.tiptap h2:first-child ~ p {
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.85rem;
+  margin: 0.1rem 0;
+}
+
+/* Reset styles after HR (section content) */
+.tiptap hr ~ p {
+  text-align: inherit;
+  color: inherit;
+  font-size: inherit;
+  margin: 0.25rem 0;
+}
+
+/* Section H2 headings (after HR) */
+.tiptap h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: hsl(var(--primary));
+  border-bottom: 1px solid hsl(var(--border));
+  padding-bottom: 0.25rem;
+}
+
+.tiptap h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.tiptap ul, .tiptap ol {
+  padding-left: 1.25rem;
+}
+
+.tiptap li {
+  margin-bottom: 0.15rem;
+}
+
+.tiptap hr {
+  border-color: hsl(var(--border));
+  margin: 0.75rem 0;
+}
+
+[dir="rtl"] .tiptap ul,
+[dir="rtl"] .tiptap ol {
+  padding-right: 1.25rem;
+  padding-left: 0;
+}
