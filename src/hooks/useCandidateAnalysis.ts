@@ -259,3 +259,5 @@ export async function loadCandidateAnalysisHistory(candidateId: string) {
   if (error) throw error;
   return (data || []) as CandidateAnalysisHistoryItem[];
 }
+
+

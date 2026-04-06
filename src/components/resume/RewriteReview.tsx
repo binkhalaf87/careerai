@@ -98,3 +98,5 @@ export default function RewriteReview({ originalText = "", improvedText = "", su
     </div>
   );
 }
+
+

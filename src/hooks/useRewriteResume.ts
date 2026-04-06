@@ -93,3 +93,5 @@ export function useRewriteResume() {
 
   return { rewrite, result, loading, error, setResult };
 }
+
+

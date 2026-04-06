@@ -82,3 +82,5 @@ const EmailResult = ({ generated, emailLang, onSave }: EmailResultProps) => {
 };
 
 export default EmailResult;
+
+

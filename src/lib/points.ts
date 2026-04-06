@@ -50,3 +50,5 @@ export async function deductPoints(
 
   return data as { success: boolean; balance: number; error?: string };
 }
+
+

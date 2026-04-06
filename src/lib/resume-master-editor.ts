@@ -136,3 +136,4 @@ export function getSectionFromMaster(master: string, section: keyof StructuredRe
   const sections = parseMasterResumeText(master);
   return cleanArtifacts(sections[section] || "");
 }
+

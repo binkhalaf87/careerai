@@ -34,3 +34,5 @@ export function RecruiterLayout({ children }: { children: React.ReactNode }) {
     </SidebarProvider>
   );
 }
+
+

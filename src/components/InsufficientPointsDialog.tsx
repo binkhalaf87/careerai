@@ -51,3 +51,5 @@ export function InsufficientPointsDialog({ open, onClose, ar = false }: Props) {
     </Dialog>
   );
 }
+
+

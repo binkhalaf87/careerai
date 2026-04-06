@@ -114,3 +114,5 @@ export const AccountTypeProvider = ({ children }: { children: ReactNode }) => {
 };
 
 export const useAccountType = () => useContext(AccountTypeContext);
+
+

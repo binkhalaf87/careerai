@@ -144,3 +144,5 @@ const WhyTalentrySection = () => {
 };
 
 export default WhyTalentrySection;
+
+

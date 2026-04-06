@@ -20,3 +20,5 @@ const RecruiterReports = () => {
 };
 
 export default RecruiterReports;
+
+

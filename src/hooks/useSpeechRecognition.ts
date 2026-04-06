@@ -79,3 +79,5 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
 
   return { isListening, transcript, isSupported, startListening, stopListening, resetTranscript };
 }
+
+

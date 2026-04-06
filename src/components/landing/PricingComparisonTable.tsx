@@ -283,3 +283,5 @@ const PricingComparisonTable = () => {
 };
 
 export default PricingComparisonTable;
+
+

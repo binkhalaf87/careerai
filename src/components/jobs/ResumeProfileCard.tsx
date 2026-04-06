@@ -159,3 +159,5 @@ export function ResumeProfileCard({ resumeData, loading, ar, onResumeChange }: P
     </Card>
   );
 }
+
+

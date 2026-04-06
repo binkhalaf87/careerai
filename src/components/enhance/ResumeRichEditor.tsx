@@ -146,3 +146,5 @@ const ResumeRichEditor = ({
 };
 
 export default ResumeRichEditor;
+
+

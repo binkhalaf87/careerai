@@ -8,3 +8,5 @@ export default function ResumeEnhancement() {
   params.set("tab", "enhanced");
   return <Navigate to={`/analysis?${params.toString()}`} replace />;
 }
+
+

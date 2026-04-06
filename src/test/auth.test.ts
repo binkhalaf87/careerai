@@ -22,3 +22,5 @@ describe("ProtectedRoute logic", () => {
     expect(isFullyAnonymous).toBe(true);
   });
 });
+
+

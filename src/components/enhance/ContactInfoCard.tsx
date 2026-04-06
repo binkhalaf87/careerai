@@ -69,3 +69,5 @@ const ContactInfoCard = ({ contact, name, jobTitle, isRTL, t }: ContactInfoCardP
 };
 
 export default ContactInfoCard;
+
+

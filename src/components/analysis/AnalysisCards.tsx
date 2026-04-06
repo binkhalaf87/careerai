@@ -264,3 +264,5 @@ export const InterviewQuestion = ({ index, question, direction }: InterviewQuest
     <p className="text-sm font-body text-muted-foreground">💡 {direction}</p>
   </div>
 );
+
+

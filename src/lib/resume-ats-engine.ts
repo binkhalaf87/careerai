@@ -199,3 +199,5 @@ export function analyzeResumeATS(resume: StructuredResume): AtsAnalysis {
     quickImprovements: issues.map((i) => i.suggestion),
   };
 }
+
+

@@ -2017,3 +2017,4 @@ export function sanitizeOptimizedSections(
   }
   return enrichStructuredResume(merged);
 }
+

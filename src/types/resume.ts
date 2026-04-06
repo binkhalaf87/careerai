@@ -37,3 +37,5 @@ export interface ImproveResumeResponse {
   warnings: string[];
   model: string;
 }
+
+

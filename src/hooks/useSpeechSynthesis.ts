@@ -52,3 +52,5 @@ export function useSpeechSynthesis(): UseSpeechSynthesisReturn {
 
   return { isSpeaking, isSupported, speak, cancel };
 }
+
+

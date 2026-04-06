@@ -921,3 +921,5 @@ const RecruiterCandidateProfile = () => {
 };
 
 export default RecruiterCandidateProfile;
+
+

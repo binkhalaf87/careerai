@@ -5,3 +5,5 @@ const RecruiterSettings = () => {
 };
 
 export default RecruiterSettings;
+
+

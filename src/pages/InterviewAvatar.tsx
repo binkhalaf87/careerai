@@ -919,3 +919,5 @@ const InterviewAvatar = () => {
 };
 
 export default InterviewAvatar;
+
+

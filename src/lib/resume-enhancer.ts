@@ -304,3 +304,5 @@ export function buildOptimizeAllPrompt(resume: StructuredResume, context?: Enhan
     JSON.stringify(resume, null, 2),
   ].join("\n\n");
 }
+
+

@@ -424,3 +424,5 @@ export function normalizeResume(rawText: string): LegacyNormalizedResume {
     linkedin,
   };
 }
+
+

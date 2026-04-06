@@ -165,3 +165,5 @@ const ResumeConfirmationStep = ({ structured, onConfirm, onBack, isRTL, t }: Res
 };
 
 export default ResumeConfirmationStep;
+
+

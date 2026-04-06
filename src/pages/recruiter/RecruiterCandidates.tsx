@@ -1034,3 +1034,5 @@ const RecruiterCandidates = () => {
 };
 
 export default RecruiterCandidates;
+
+

@@ -38,3 +38,5 @@ const RecruiterProtectedRoute = ({ children }: { children: React.ReactNode }) =>
 };
 
 export default RecruiterProtectedRoute;
+
+

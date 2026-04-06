@@ -36,3 +36,5 @@ const StepIndicator = ({ steps }: StepIndicatorProps) => {
 };
 
 export default StepIndicator;
+
+

@@ -409,3 +409,5 @@ type AnalysisInsightLocal = {
   careerRecommendations?: { skills_to_improve?: string[]; certifications_recommended?: string[] };
   overallScore?: number;
 };
+
+

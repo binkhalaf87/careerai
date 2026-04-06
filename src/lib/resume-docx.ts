@@ -195,3 +195,5 @@ export async function downloadEnhancedResumeAsWord(args: {
   const blob = await Packer.toBlob(doc);
   saveAs(blob, `${args.fileName || "talentry-enhanced-resume"}.docx`);
 }
+
+

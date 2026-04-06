@@ -313,3 +313,5 @@ export function relativeTime(date: Date | string | null, ar = false): string {
   if (seconds < 86400) return ar ? `منذ ${Math.floor(seconds / 3600)} ساعة` : `${Math.floor(seconds / 3600)}h ago`;
   return ar ? `منذ ${Math.floor(seconds / 86400)} يوم` : `${Math.floor(seconds / 86400)}d ago`;
 }
+
+

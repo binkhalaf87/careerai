@@ -335,3 +335,5 @@ export function JourneyProgressBar({ stage, ar = false }: { stage: string; ar?: 
     </div>
   );
 }
+
+

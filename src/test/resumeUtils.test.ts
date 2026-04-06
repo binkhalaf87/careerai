@@ -44,3 +44,5 @@ describe("scoreColor", () => {
     expect(scoreColor(0)).toBe("text-destructive");
   });
 });
+
+

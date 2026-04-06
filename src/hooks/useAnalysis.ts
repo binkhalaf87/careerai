@@ -62,3 +62,5 @@ export function useAnalysis(resumeId?: string | null) {
 
   return { analysis, loading, error };
 }
+
+

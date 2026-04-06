@@ -43,3 +43,5 @@ export async function ensureUserProfile(user: User | null | undefined): Promise<
     console.error("[ensureUserProfile] insert error:", insertError.message);
   }
 }
+
+

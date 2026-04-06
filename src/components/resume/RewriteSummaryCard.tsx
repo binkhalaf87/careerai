@@ -82,3 +82,5 @@ export default function RewriteSummaryCard({ resume, analysis, improvementSummar
     </div>
   );
 }
+
+

@@ -89,3 +89,5 @@ const MetricSuggestions = ({ experience, onAddMetric, isRTL, t }: MetricSuggesti
 };
 
 export default MetricSuggestions;
+
+

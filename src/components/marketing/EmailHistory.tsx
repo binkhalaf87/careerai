@@ -78,3 +78,5 @@ const EmailHistory = ({ history, onDelete }: EmailHistoryProps) => {
 
 export default EmailHistory;
 export type { SavedEmail };
+
+

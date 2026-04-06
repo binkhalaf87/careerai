@@ -39,3 +39,5 @@ describe("getPointsBalance", () => {
     expect(balance).toBe(7); // 10 + (-3)
   });
 });
+
+
