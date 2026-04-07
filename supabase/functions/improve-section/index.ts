@@ -150,14 +150,14 @@ function shouldFallback(original: string, improved: string): boolean {
 }
 
 async function callAi(apiKey: string, language: string, userPrompt: string): Promise<string> {
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: buildSystemPrompt(language) },
         { role: "user", content: userPrompt },
@@ -373,13 +373,13 @@ serve(async (req) => {
       extraInstruction,
     } = body;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
     // ── BULLET MODE: enhance a single bullet point ──────────────
     if (bulletText && typeof bulletText === "string") {
       console.log(`Bullet enhancement requested: action=${bulletAction || "improve"}`);
-      const improved = await enhanceBullet(bulletText, bulletAction || "improve", language || "en", LOVABLE_API_KEY);
+      const improved = await enhanceBullet(bulletText, bulletAction || "improve", language || "en", OPENAI_API_KEY);
       return new Response(JSON.stringify({ improved_bullet: improved }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -404,7 +404,7 @@ serve(async (req) => {
             (batchPrompts && typeof batchPrompts === "object" && batchPrompts[sec]) ||
             optimizeAllPrompt ||
             sectionPrompt;
-          const improved = await enhanceSingleSection(String(secContent), sec, language || "en", LOVABLE_API_KEY, {
+          const improved = await enhanceSingleSection(String(secContent), sec, language || "en", OPENAI_API_KEY, {
             customPrompt: typeof customPrompt === "string" ? customPrompt : undefined,
             targetTitle: typeof targetTitle === "string" ? targetTitle : undefined,
             targetKeywords: Array.isArray(targetKeywords) ? targetKeywords.map(String) : [],
@@ -455,7 +455,7 @@ serve(async (req) => {
 
     console.log(`Single section enhancement: type=${resolvedSectionType}, lang=${resolvedLanguage}`);
 
-    const improved = await enhanceSingleSection(resolvedText, resolvedSectionType, resolvedLanguage, LOVABLE_API_KEY, {
+    const improved = await enhanceSingleSection(resolvedText, resolvedSectionType, resolvedLanguage, OPENAI_API_KEY, {
       customPrompt: resolvedCustomPrompt,
       targetTitle: typeof resolvedTargetTitle === "string" ? resolvedTargetTitle : undefined,
       targetKeywords: Array.isArray(targetKeywords) ? targetKeywords.map(String) : [],
