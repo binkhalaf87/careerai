@@ -304,8 +304,6 @@ const extractResponse = await fetch(
 
 const extractData = await extractResponse.json();
 const extractError = extractResponse.ok ? null : new Error(extractData?.message || "Extraction failed");
-    body: formData,
-  });
 
   if (extractError) {
     const extractionErrorMessage = await getSupabaseFunctionErrorMessage(extractError, "Text extraction failed");
