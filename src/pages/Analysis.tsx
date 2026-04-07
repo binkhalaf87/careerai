@@ -1235,27 +1235,34 @@ const Analysis = () => {
 
   /* ── Score ring helper ── */
   const ScoreRing = ({ score }: { score: number }) => {
-    const r = 36;
+    const r = 44;
     const circ = 2 * Math.PI * r;
     const fill = (score / 100) * circ;
+    const grade = score >= 85 ? "A" : score >= 70 ? "B" : score >= 55 ? "C" : "D";
+    const gradeColor = score >= 85 ? "text-emerald-500" : score >= 70 ? "text-amber-500" : score >= 55 ? "text-orange-500" : "text-red-500";
     return (
-      <div className="relative w-28 h-28 flex-shrink-0">
-        <svg className="w-28 h-28 -rotate-90" viewBox="0 0 88 88">
-          <circle cx="44" cy="44" r={r} fill="none" strokeWidth="6" className="text-muted/30" stroke="currentColor" />
+      <div className="relative w-36 h-36 flex-shrink-0">
+        {/* Outer glow ring */}
+        <div className="absolute inset-0 rounded-full opacity-20 blur-md" style={{ background: scoreRingColor(score) }} />
+        <svg className="w-36 h-36 -rotate-90" viewBox="0 0 104 104">
+          {/* Track */}
+          <circle cx="52" cy="52" r={r} fill="none" strokeWidth="7" stroke="currentColor" className="text-muted/20" />
+          {/* Progress */}
           <circle
-            cx="44"
-            cy="44"
+            cx="52"
+            cy="52"
             r={r}
             fill="none"
-            strokeWidth="6"
+            strokeWidth="7"
             strokeDasharray={`${fill} ${circ}`}
             strokeLinecap="round"
-            style={{ stroke: scoreRingColor(score), transition: "stroke-dasharray 1s ease" }}
+            style={{ stroke: scoreRingColor(score), transition: "stroke-dasharray 1.2s cubic-bezier(0.4,0,0.2,1)", filter: `drop-shadow(0 0 6px ${scoreRingColor(score)}60)` }}
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`text-3xl font-black leading-none ${scoreColor(score)}`}>{score}</span>
-          <span className="text-[10px] text-muted-foreground mt-0.5">/100</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+          <span className={`text-4xl font-black leading-none tabular-nums ${scoreColor(score)}`}>{score}</span>
+          <span className="text-[10px] text-muted-foreground font-medium">/100</span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${gradeColor} bg-current/10`} style={{color: scoreRingColor(score), borderColor: `${scoreRingColor(score)}40`, background: `${scoreRingColor(score)}12`}}>{grade}</span>
         </div>
       </div>
     );
@@ -1307,7 +1314,7 @@ const Analysis = () => {
             </div>
             <p className="text-xs text-muted-foreground">{stageConfig[stage].progress}%</p>
           </div>
-          <div className="space-y-1.5 text-start">
+          <div className="space-y-1 text-start">
             {allStages.slice(0, -1).map((s, i) => {
               const currentIdx = allStages.indexOf(stage);
               const isDone = i < currentIdx;
@@ -1315,16 +1322,21 @@ const Analysis = () => {
               return (
                 <div
                   key={s}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${isCurrent ? "bg-violet-500/10 text-violet-600 dark:text-violet-400" : isDone ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"}`}
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all duration-300 ${isCurrent ? "bg-violet-500/12 text-violet-600 dark:text-violet-400 border border-violet-500/20" : isDone ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40"}`}
                 >
                   {isDone ? (
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <div className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    </div>
                   ) : isCurrent ? (
-                    <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" />
+                    <div className="w-5 h-5 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center flex-shrink-0">
+                      <Loader2 className="w-3 h-3 text-violet-500 animate-spin" />
+                    </div>
                   ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-current flex-shrink-0" />
+                    <div className="w-5 h-5 rounded-full border-2 border-current flex-shrink-0 opacity-30" />
                   )}
-                  <span>{language === "ar" ? stageConfig[s].ar : stageConfig[s].en}</span>
+                  <span className={isCurrent ? "font-semibold" : ""}>{language === "ar" ? stageConfig[s].ar : stageConfig[s].en}</span>
+                  {isDone && <span className="ml-auto text-[10px] text-emerald-500 font-bold">{language === "ar" ? "✓ تم" : "✓ Done"}</span>}
                 </div>
               );
             })}
@@ -1361,8 +1373,11 @@ const Analysis = () => {
 
         <main className="container max-w-2xl py-12 px-4">
           <div className="text-center space-y-3 mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-violet-500/10 flex items-center justify-center mx-auto">
-              <Brain className="w-8 h-8 text-violet-500" />
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 rounded-2xl bg-violet-500/20 blur-xl" />
+              <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/10 border border-violet-500/20 flex items-center justify-center">
+                <Brain className="w-10 h-10 text-violet-500" />
+              </div>
             </div>
             <h2 className="text-2xl font-extrabold text-foreground">
               {selectedResume || resumeId
@@ -1590,6 +1605,12 @@ const Analysis = () => {
               <BarChart3 className="w-3.5 h-3.5 text-violet-500" />
             </div>
             <span className="font-bold text-sm text-foreground hidden sm:block">{t.analysis.title}</span>
+            {result && (
+              <span className={`hidden sm:inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ml-2 ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : "bg-red-500/10 text-red-600 border-red-500/20"}`}>
+                <BarChart3 className="w-3 h-3" />
+                {result.ats_score}/100
+              </span>
+            )}
           </div>
           <div className="flex-1" />
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1598,10 +1619,10 @@ const Analysis = () => {
               size="sm"
               onClick={handleRetrySelectedResume}
               disabled={analyzing}
-              className="gap-1.5 rounded-lg text-xs"
+              className="gap-1.5 rounded-lg text-xs border-violet-500/30 hover:border-violet-500 hover:bg-violet-500/5"
             >
-              {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BarChart3 className="w-3.5 h-3.5" />}
-              {ar ? "إعادة التحليل / Re-analyze" : "Re-analyze / إعادة التحليل"}
+              {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" /> : <BarChart3 className="w-3.5 h-3.5 text-violet-500" />}
+              {ar ? "إعادة التحليل" : "Re-analyze"}
             </Button>
             <Button
               variant="outline"
@@ -1638,21 +1659,27 @@ const Analysis = () => {
           onValueChange={(value) => setActiveTab(value as "overview" | "corrections" | "enhanced")}
           className="space-y-5"
         >
-          <TabsList className="grid h-auto w-full grid-cols-3 rounded-2xl bg-muted/60 p-1">
-            <TabsTrigger value="overview" className="rounded-xl">
-              {ar ? "التحليل" : "Overview"}
+          <TabsList className="grid h-auto w-full grid-cols-3 rounded-2xl bg-muted/50 p-1.5 border border-border/60">
+            <TabsTrigger value="overview" className="rounded-xl gap-1.5 data-[state=active]:shadow-md">
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{ar ? "التحليل الكامل" : "Full Analysis"}</span>
+              <span className="sm:hidden">{ar ? "التحليل" : "Analysis"}</span>
             </TabsTrigger>
-            <TabsTrigger value="corrections" className="rounded-xl">
-              {ar ? "التصحيحات" : "Corrections"}
+            <TabsTrigger value="corrections" className="rounded-xl gap-1.5 data-[state=active]:shadow-md">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{ar ? "مراجعة البيانات" : "Data Review"}</span>
+              <span className="sm:hidden">{ar ? "التصحيح" : "Review"}</span>
             </TabsTrigger>
-            <TabsTrigger value="enhanced" className="rounded-xl">
-              {ar ? "السيرة المحسنة" : "Enhanced Resume"}
+            <TabsTrigger value="enhanced" className="rounded-xl gap-1.5 data-[state=active]:shadow-md">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{ar ? "السيرة المحسنة" : "Enhanced Resume"}</span>
+              <span className="sm:hidden">{ar ? "محسّنة" : "Enhanced"}</span>
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-0 space-y-5">
             {/* ── HERO SCORE CARD ── */}
-            <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-violet-500/8 via-background to-indigo-500/5 p-6">
+            <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-violet-600/10 via-background to-indigo-600/8 p-6 shadow-lg shadow-violet-500/5">
               <div className="absolute top-0 right-0 w-40 h-40 bg-violet-500/8 rounded-full blur-3xl pointer-events-none" />
               <div className="absolute bottom-0 left-0 w-28 h-28 bg-indigo-500/8 rounded-full blur-2xl pointer-events-none" />
 
@@ -1704,9 +1731,14 @@ const Analysis = () => {
                       </span>
                     )}
                     <span
-                      className={`text-xs px-2.5 py-1 rounded-full font-medium border ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"}`}
+                      className={`text-xs px-3 py-1.5 rounded-full font-bold border flex items-center gap-1.5 ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"}`}
                     >
-                      ATS: {result.ats_score}/100
+                      <BarChart3 className="w-3 h-3" />
+                      ATS Score: {result.ats_score}/100
+                    </span>
+                    <span className="text-xs px-3 py-1.5 rounded-full font-bold border bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/20 flex items-center gap-1.5">
+                      <Zap className="w-3 h-3" />
+                      {result.ats_score >= 85 ? (ar ? "جاهز للتقديم" : "Apply-Ready") : result.ats_score >= 70 ? (ar ? "قريب من الجاهزية" : "Nearly Ready") : result.ats_score >= 55 ? (ar ? "يحتاج تحسين" : "Needs Work") : (ar ? "يحتاج إعادة صياغة" : "Major Revision")}
                     </span>
                   </div>
                 </div>
@@ -1725,19 +1757,41 @@ const Analysis = () => {
               </div>
             </div>
 
+            {/* ── SCORE SUMMARY ROW ── */}
+            {result.section_scores && Object.keys(result.section_scores).length > 0 && (
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                {Object.entries(result.section_scores)
+                  .filter(([key]) => sectionScoreLabels[key])
+                  .slice(0, 6)
+                  .map(([key, score]) => {
+                    const n = normalizeScore(score);
+                    return (
+                      <div key={key} className="flex flex-col items-center gap-1 p-2.5 rounded-xl border border-border/60 bg-card/80 hover:border-violet-400/40 transition-colors cursor-default">
+                        <span className={`text-lg font-black tabular-nums ${scoreColor(n)}`}>{n}</span>
+                        <span className="text-[9px] text-muted-foreground text-center leading-tight">{sectionScoreLabels[key]?.split(" ")[0] || key}</span>
+                        <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-700" style={{width:`${n}%`, background: scoreRingColor(n)}} />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
             {/* ── PRIORITY FIXES ── */}
             {hasArray(priorityFixes) && (
-              <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 p-5 space-y-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0 border border-amber-500/20">
                     <Zap className="w-4 h-4 text-amber-500" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-foreground">
-                      {ar ? "أهم الإصلاحات أولاً" : "Top Priority Fixes"}
+                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      {ar ? "أولويات التحسين الفورية" : "Immediate Priority Fixes"}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium border border-amber-500/20">{priorityFixes.length} {ar ? "نقاط" : "items"}</span>
                     </h3>
                     <p className="text-xs text-muted-foreground">
-                      {ar ? "أسرع النقاط التي سترفع جودة سيرتك" : "Fastest improvements that lift resume quality"}
+                      {ar ? "ابدأ بهذه النقاط لأكبر تأثير على نتيجة ATS" : "Start here for maximum ATS score impact"}
                     </p>
                   </div>
                 </div>
@@ -1808,19 +1862,21 @@ const Analysis = () => {
                       </div>
                     )}
                     {hasArray(result.executive_summary.top_strengths) && (
-                      <div className="p-4 bg-card rounded-xl border border-emerald-500/20 bg-emerald-500/3 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4 text-emerald-500" />
+                      <div className="p-4 rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-emerald-500/3 space-y-2">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-6 h-6 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+                            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                          </div>
                           <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
                             {t.analysis.strengths}
                           </h4>
                         </div>
-                        <ul className="space-y-1">
+                        <ul className="space-y-2">
                           {result.executive_summary.top_strengths
                             .filter((s) => !isJunk(s) && typeof s === "string")
                             .map((s, i) => (
-                              <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
-                                <span className="text-emerald-500 flex-shrink-0">✓</span>
+                              <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-emerald-500/8 rounded-lg p-2">
+                                <span className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-[9px] font-bold text-emerald-600">{i+1}</span>
                                 {s}
                               </li>
                             ))}
@@ -1828,19 +1884,21 @@ const Analysis = () => {
                       </div>
                     )}
                     {hasArray(result.executive_summary.main_risks) && (
-                      <div className="p-4 bg-card rounded-xl border border-red-500/20 bg-red-500/3 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Eye className="w-4 h-4 text-red-500" />
+                      <div className="p-4 rounded-xl border border-red-500/25 bg-gradient-to-br from-red-500/8 to-red-500/3 space-y-2">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-6 h-6 rounded-lg bg-red-500/15 flex items-center justify-center">
+                            <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                          </div>
                           <h4 className="text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">
                             {t.analysis.risks}
                           </h4>
                         </div>
-                        <ul className="space-y-1">
+                        <ul className="space-y-2">
                           {result.executive_summary.main_risks
                             .filter((r) => !isJunk(r) && typeof r === "string")
                             .map((r, i) => (
-                              <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
-                                <span className="text-red-500 flex-shrink-0">!</span>
+                              <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-red-500/8 rounded-lg p-2">
+                                <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />
                                 {r}
                               </li>
                             ))}
@@ -1855,15 +1913,22 @@ const Analysis = () => {
             {/* ── SECTION SCORES ── */}
             {hasObject(result.section_scores) && (
               <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-violet-500" />
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">{ar ? "نقاط أقسام السيرة" : "Section Scores"}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar
-                        ? "اضغط على أي قسم للانتقال لمحرر التحسين"
-                        : "Click any section to jump to the enhancement editor"}
-                    </p>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                      <BarChart3 className="w-4 h-4 text-violet-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-foreground">{ar ? "تقييم أقسام السيرة" : "Section Performance"}</h3>
+                      <p className="text-xs text-muted-foreground">
+                        {ar ? "اضغط على أي قسم للانتقال للمحرر" : "Tap any section to jump to editor"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="hidden md:flex gap-3 text-xs text-muted-foreground items-center">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />{ar ? "ممتاز ≥80" : "Strong ≥80"}</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />{ar ? "جيد ≥60" : "Good ≥60"}</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{ar ? "ضعيف <60" : "Weak <60"}</span>
                   </div>
                 </div>
                 <div className="space-y-2.5">
@@ -2246,7 +2311,7 @@ const Analysis = () => {
             )}
 
             {/* ── BOTTOM CTA ── */}
-            <div className="rounded-2xl border-2 border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-indigo-500/5 p-6 text-center space-y-4">
+            <div className="rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-600/10 via-indigo-600/8 to-purple-600/5 p-8 text-center space-y-4 shadow-lg shadow-violet-500/8">
               <div className="w-12 h-12 rounded-xl bg-violet-500/15 flex items-center justify-center mx-auto">
                 <Sparkles className="w-6 h-6 text-violet-500" />
               </div>
@@ -2446,5 +2511,3 @@ const Analysis = () => {
 };
 
 export default Analysis;
-
-
