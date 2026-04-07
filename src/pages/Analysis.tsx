@@ -1348,29 +1348,6 @@ const Analysis = () => {
     </Dialog>
   );
 
-  /* ── Score ring helper ── */
-  const ScoreRing = ({ score }: { score: number }) => {
-    const r = 44;
-    const circ = 2 * Math.PI * r;
-    const fill = (score / 100) * circ;
-    const grade = score >= 85 ? "A" : score >= 70 ? "B" : score >= 55 ? "C" : "D";
-    return (
-      <div className="relative w-36 h-36 flex-shrink-0">
-        <div className="absolute inset-0 rounded-full opacity-20 blur-md" style={{ background: scoreRingColor(score) }} />
-        <svg className="w-36 h-36 -rotate-90" viewBox="0 0 104 104">
-          <circle cx="52" cy="52" r={r} fill="none" strokeWidth="7" stroke="currentColor" className="text-muted/20" />
-          <circle cx="52" cy="52" r={r} fill="none" strokeWidth="7" strokeDasharray={`${fill} ${circ}`} strokeLinecap="round"
-            style={{ stroke: scoreRingColor(score), transition: "stroke-dasharray 1.2s cubic-bezier(0.4,0,0.2,1)", filter: `drop-shadow(0 0 6px ${scoreRingColor(score)}60)` }} />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-          <span className={`text-4xl font-black leading-none tabular-nums ${scoreColor(score)}`}>{score}</span>
-          <span className="text-[10px] text-muted-foreground font-medium">/100</span>
-          <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{color: scoreRingColor(score), borderColor: `${scoreRingColor(score)}40`, background: `${scoreRingColor(score)}15`, border: `1px solid ${scoreRingColor(score)}40`}}>{grade}</span>
-        </div>
-      </div>
-    );
-  };
-
   /* ══════════════════ EMPTY STATE ══════════════════ */
   if (!result) {
     return (
@@ -1462,7 +1439,7 @@ const Analysis = () => {
     { id: "ats",          labelAr: "تفاصيل ATS", labelEn: "ATS Details", icon: ListChecks },
     { id: "career",       labelAr: "التوصيات", labelEn: "Career",   icon: Briefcase },
     { id: "salary",       labelAr: "الرواتب", labelEn: "Salary",   icon: DollarSign },
-    { id: "recruiter",    labelAr: "نظرة المجند", labelEn: "Recruiter", icon: Eye },
+    { id: "recruiter",    labelAr: "نظرة مسئول التوظيف", labelEn: "Recruiter", icon: Eye },
     { id: "improvements", labelAr: "التحسينات", labelEn: "Fixes",  icon: Zap },
     { id: "interview",    labelAr: "المقابلة", labelEn: "Interview", icon: MessageSquare },
     { id: "enhanced",     labelAr: "السيرة المحسنة", labelEn: "Enhanced CV", icon: Wand2 },
@@ -2113,7 +2090,7 @@ const Analysis = () => {
           {activeTab === "recruiter" && !hasRecruiterAnalysis && (
             <div className="text-center py-16 space-y-3">
               <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto" />
-              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل المجند." : "No recruiter analysis data."}</p>
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل مسئول التوظيف." : "No recruiter analysis data."}</p>
               <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
             </div>
           )}
