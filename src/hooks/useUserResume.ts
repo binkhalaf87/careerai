@@ -282,39 +282,22 @@ export async function uploadAndParseResume(
   setProgress(55);
 
   // ── STEP 4: Extract text via Edge Function ──────────────────────────────
+  // Use supabase.functions.invoke() — automatically attaches the session JWT
   const formData = buildResumeUploadFormData(file, mimeType);
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData?.session?.access_token;
+  const { data: extractData, error: extractErr } = await supabase.functions.invoke("extract-text", {
+    body: formData,
+  });
 
-  if (!accessToken) {
-    await cleanupUploadedResumeArtifacts(resumeRow.id, filePath);
-    throw new Error("Session expired. Please sign in again.");
-  }
-
-  const extractResponse = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-text`,
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
-      },
-      body: formData,
-    },
-  );
-
-  const extractData = await extractResponse.json() as Record<string, unknown>;
-
-  if (!extractResponse.ok) {
-    const errorMessage = String(extractData?.message || extractData?.error || "Text extraction failed");
+  if (extractErr) {
+    const ctx = extractErr as unknown as { context?: { message?: string } };
+    const errorMessage = ctx.context?.message || extractErr.message || "Text extraction failed";
     await cleanupUploadedResumeArtifacts(resumeRow.id, filePath);
     throw new Error(errorMessage);
   }
 
-  if (extractData?.error) {
+  if (!extractData || extractData?.error) {
     const extractionMessage = String(extractData?.message || extractData?.error || "Text extraction failed");
-    console.warn("[uploadAndParseResume] extraction warning:", extractionMessage, extractData?.meta);
     await cleanupUploadedResumeArtifacts(resumeRow.id, filePath);
     throw new Error(extractionMessage);
   }
