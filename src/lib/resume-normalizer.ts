@@ -193,7 +193,8 @@ function looksLikeJobTitle(line: string): boolean {
   if (looksLikeContact(line)) return false;
   if (isLikelySectionHeading(line)) return false;
 
-  return /engineer|manager|specialist|supervisor|analyst|developer|consultant|officer|lead|director|support|technician|coordinator|assistant|administrator|architect|designer|executive|مهندس|مدير|أخصائي|مشرف|محلل|مطور|استشاري|فني|منسق|مساعد|مسؤول|مصمم|قائد/i.test(\n    line,
+  return /engineer|manager|specialist|supervisor|analyst|developer|consultant|officer|lead|director|support|technician|coordinator|assistant|administrator|architect|designer|executive|مهندس|مدير|أخصائي|مشرف|محلل|مطور|استشاري|فني|منسق|مساعد|مسؤول|مصمم|قائد/i.test(
+    line,
   );
 }
 
@@ -369,7 +370,8 @@ export function parseResumeTextRobust(rawText: string): StructuredResume {
     }
 
     if (
-      /excel|power bi|sql|python|react|javascript|java|oracle|aws|azure|docker|git|إكسل|باور بي آي|تحليل|قيادة|شبكات|برمجة/i.test(\n        line,
+      /excel|power bi|sql|python|react|javascript|java|oracle|aws|azure|docker|git|إكسل|باور بي آي|تحليل|قيادة|شبكات|برمجة/i.test(
+        line,
       )
     ) {
       appendSectionValue(result, "skills", line);
@@ -377,7 +379,8 @@ export function parseResumeTextRobust(rawText: string): StructuredResume {
     }
 
     if (
-      /arabic|english|urdu|french|hindi|spanish|german|chinese|العربية|الانجليزية|الإنجليزية|فرنسي|أردو|هندي/i.test(\n        line,
+      /arabic|english|urdu|french|hindi|spanish|german|chinese|العربية|الانجليزية|الإنجليزية|فرنسي|أردو|هندي/i.test(
+        line,
       )
     ) {
       appendSectionValue(result, "languages", line);
@@ -385,7 +388,8 @@ export function parseResumeTextRobust(rawText: string): StructuredResume {
     }
 
     if (
-      /bachelor|master|diploma|phd|university|college|degree|graduated|بكالوريوس|ماجستير|دبلوم|جامعة|كلية|تخرج/i.test(\n        line,
+      /bachelor|master|diploma|phd|university|college|degree|graduated|بكالوريوس|ماجستير|دبلوم|جامعة|كلية|تخرج/i.test(
+        line,
       )
     ) {
       appendSectionValue(result, "education", line);
@@ -451,8 +455,6 @@ export function normalizeResumeForAnalysis(rawText: string): NormalizedResumeAna
     experience: toList(structured.experience),
     education: toList(structured.education),
     certifications: toList(structured.certifications),
-    raw_text: cleanArtifacts(String(rawText || "")).replace(/\n{3,}/g, "
-
-").trim(),
+    raw_text: cleanArtifacts(String(rawText || "")).replace(/\n{3,}/g, "\n\n").trim(),
   };
 }
