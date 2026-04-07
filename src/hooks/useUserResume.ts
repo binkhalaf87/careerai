@@ -240,7 +240,7 @@ export async function uploadAndParseResume(
 
   setProgress(5);
 
-  // ── STEP 1: Validate file type before anything ─────────────────────────
+  // ── STEP 1: Validate file ───────────────────────────────────────────────
   const { mimeType } = validateResumeFile(file);
   setProgress(12);
 
@@ -251,7 +251,6 @@ export async function uploadAndParseResume(
   const { error: uploadError } = await supabase.storage.from("resumes").upload(filePath, file, {
     cacheControl: "3600",
     upsert: false,
-    // FIX: Explicitly set contentType to ensure correct MIME type
     contentType: mimeType,
   });
 
@@ -273,7 +272,6 @@ export async function uploadAndParseResume(
     .single();
 
   if (insertError || !resumeRow) {
-    // Rollback: remove uploaded file so storage doesn't have orphans
     try {
       await supabase.storage.from("resumes").remove([filePath]);
     } catch {
@@ -284,31 +282,29 @@ export async function uploadAndParseResume(
   setProgress(55);
 
   // ── STEP 4: Extract text via Edge Function ──────────────────────────────
-  // FIX: Supabase invoke() with FormData body must NOT set Content-Type manually
-  // The browser sets it automatically with the correct boundary for multipart/form-data
   const formData = buildResumeUploadFormData(file, mimeType);
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const extractResponse = await fetch(
-  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-text`,
-  {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
+  const extractResponse = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-text`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: formData,
     },
-    body: formData,
-  }
-);
+  );
 
-const extractData = await extractResponse.json();
-const extractError = extractResponse.ok ? null : new Error(extractData?.message || "Extraction failed");
+  const extractData = await extractResponse.json() as Record<string, unknown>;
 
-  if (extractError) {
-    const extractionErrorMessage = await getSupabaseFunctionErrorMessage(extractError, "Text extraction failed");
+  if (!extractResponse.ok) {
+    const errorMessage = String(extractData?.message || extractData?.error || "Text extraction failed");
     await cleanupUploadedResumeArtifacts(resumeRow.id, filePath);
-    throw new Error(extractionErrorMessage);
+    throw new Error(errorMessage);
   }
 
   if (extractData?.error) {
@@ -317,6 +313,7 @@ const extractError = extractResponse.ok ? null : new Error(extractData?.message 
     await cleanupUploadedResumeArtifacts(resumeRow.id, filePath);
     throw new Error(extractionMessage);
   }
+
   setProgress(78);
 
   // ── STEP 5: Build structured data ──────────────────────────────────────
@@ -352,7 +349,7 @@ const extractError = extractResponse.ok ? null : new Error(extractData?.message 
   const detectedSkills = String(extractData?.detected_skills || structured.skills || "").trim() || null;
   const detectedExperienceLevel = String(extractData?.detected_experience_level || "").trim() || null;
 
-  // ── STEP 6: Update resume record with extracted text ───────────────────
+  // ── STEP 6: Update resume record ───────────────────────────────────────
   await supabase
     .from("resumes")
     .update({
@@ -382,8 +379,6 @@ const extractError = extractResponse.ok ? null : new Error(extractData?.message 
 
   if (userResumeError) {
     console.error("[uploadAndParseResume] user_resumes insert error:", userResumeError);
-    // Don't rollback here — the resume was uploaded and parsed successfully
-    // user_resumes is supplementary metadata, not critical
     console.warn("[uploadAndParseResume] Continuing despite user_resumes error");
   }
 
@@ -413,5 +408,3 @@ export async function getStoredResumeData(userId: string, resumeId: string): Pro
   if (!Array.isArray(data) || data.length === 0) return null;
   return data[0] as UserResumeData;
 }
-
-
