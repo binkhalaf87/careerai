@@ -316,14 +316,10 @@ export async function uploadAndParseResume(
     full_name: normalized.name || structured.full_name || structured.name || "",
     job_title: normalized.jobTitle || structured.job_title || normalizedAnalysis.job_title || "",
     summary: normalizedAnalysis.summary || structured.summary || structured.professional_summary || "",
-    experience: normalizedAnalysis.experience.join("
-") || structured.experience || structured.work_experience || "",
-    skills: normalizedAnalysis.skills.join("
-") || structured.skills || "",
-    education: normalizedAnalysis.education.join("
-") || structured.education || "",
-    certifications: normalizedAnalysis.certifications.join("
-") || structured.certifications || "",
+    experience: normalizedAnalysis.experience.join("\n") || structured.experience || structured.work_experience || "",
+    skills: normalizedAnalysis.skills.join("\n") || structured.skills || "",
+    education: normalizedAnalysis.education.join("\n") || structured.education || "",
+    certifications: normalizedAnalysis.certifications.join("\n") || structured.certifications || "",
     raw_text: normalizedAnalysis.raw_text || rawText,
     email: normalized.email || structured.email || "",
     phone: normalized.phone || structured.phone || "",
