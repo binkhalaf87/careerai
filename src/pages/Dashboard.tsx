@@ -371,17 +371,7 @@ const Dashboard = () => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    // CV upload limit: max 3
     const cvCount = profile?.cv_upload_count ?? 0;
-    if (cvCount >= 3) {
-      toast.error(
-        ar
-          ? "لقد وصلت للحد الأقصى (3 سير ذاتية). احذف واحدة لرفع سيرة جديدة."
-          : "You've reached the upload limit (3 CVs). Delete one to upload a new resume.",
-      );
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
 
     setUploadProgress(0);
     setUploading(true);
