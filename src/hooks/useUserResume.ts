@@ -288,7 +288,22 @@ export async function uploadAndParseResume(
   // The browser sets it automatically with the correct boundary for multipart/form-data
   const formData = buildResumeUploadFormData(file, mimeType);
 
-  const { data: extractData, error: extractError } = await supabase.functions.invoke("extract-text", {
+  const { data: { session } } = await supabase.auth.getSession();
+
+const extractResponse = await fetch(
+  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-text`,
+  {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: formData,
+  }
+);
+
+const extractData = await extractResponse.json();
+const extractError = extractResponse.ok ? null : new Error(extractData?.message || "Extraction failed");
     body: formData,
   });
 
