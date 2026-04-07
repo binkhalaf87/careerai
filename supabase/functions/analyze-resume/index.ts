@@ -575,10 +575,10 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
+    const openAIApiKey = Deno.env.get("GEMINI_API_KEY");
 
     if (!openAIApiKey) {
-      throw new Error("OPENAI_API_KEY is not configured");
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -613,14 +613,14 @@ serve(async (req) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 170000);
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${openAIApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gemini-2.0-flash",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
