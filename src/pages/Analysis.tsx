@@ -1506,7 +1506,11 @@ const Analysis = () => {
     { id: "ats",          labelAr: "تفاصيل ATS", labelEn: "ATS Details", icon: ListChecks },
     { id: "career",       labelAr: "التوصيات", labelEn: "Career",   icon: Briefcase },
     { id: "salary",       labelAr: "الرواتب", labelEn: "Salary",   icon: DollarSign },
+<<<<<<< HEAD
     { id: "recruiter",    labelAr: "نظرة المجند", labelEn: "Recruiter", icon: Eye },
+=======
+    { id: "recruiter",    labelAr: "نظرة مسئول التوظيف", labelEn: "Recruiter", icon: Eye },
+>>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
     { id: "improvements", labelAr: "التحسينات", labelEn: "Fixes",  icon: Zap },
     { id: "interview",    labelAr: "المقابلة", labelEn: "Interview", icon: MessageSquare },
     { id: "enhanced",     labelAr: "السيرة المحسنة", labelEn: "Enhanced CV", icon: Wand2 },
@@ -1745,6 +1749,7 @@ const Analysis = () => {
                 </div>
               )}
 
+<<<<<<< HEAD
               {(analysisStrengths.length > 0 || analysisWeaknesses.length > 0 || analysisMissingKeywords.length > 0 || analysisImprovements.length > 0) && (
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-emerald-500/20 bg-card p-5 space-y-3 w-full max-w-none">
@@ -1799,10 +1804,46 @@ const Analysis = () => {
                         </div>
                       ))}
                     </div>
+=======
+              {/* Priority Fixes */}
+              {hasArray(priorityFixes) && (
+                <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 overflow-hidden">
+                  <div className="flex items-center justify-between p-5 border-b border-amber-500/15">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
+                        <Zap className="w-4 h-4 text-amber-500" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                          {ar ? "أولويات التحسين الفوري" : "Immediate Priority Fixes"}
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">{priorityFixes.length}</span>
+                        </h2>
+                        <p className="text-xs text-muted-foreground">{ar ? "ابدأ بهذه النقاط لأكبر تأثير على نتيجة ATS" : "Start here for maximum ATS score impact"}</p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setActiveTab("improvements" as any)} className="text-xs rounded-lg gap-1">
+                      {ar ? "عرض الكل" : "View all"}<ChevronRight className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <div className="p-5 grid md:grid-cols-3 gap-3">
+                    {priorityFixes.map((item) => (
+                      <Link key={item.id} to={buildEnhanceUrl(item.focus)} className="group flex flex-col gap-2 p-3.5 rounded-xl border-2 border-border hover:border-violet-400 bg-background/70 hover:bg-violet-500/5 transition-all">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold w-fit ${item.priority === "high" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}`}>
+                          {item.priority === "high" ? (ar ? "عالية" : "High") : ar ? "متوسطة" : "Medium"}
+                        </span>
+                        <p className="text-xs font-semibold text-foreground leading-relaxed">{item.title}</p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed flex-1">{item.action}</p>
+                        <span className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
+                          {ar ? "إصلاح في المحرر" : "Fix in Editor"}<ChevronRight className="w-3 h-3" />
+                        </span>
+                      </Link>
+                    ))}
+>>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
                   </div>
                 </div>
               )}
 
+<<<<<<< HEAD
               {/* Priority Fixes */}
               {hasArray(priorityFixes) && (
                 <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 overflow-hidden">
@@ -1840,6 +1881,8 @@ const Analysis = () => {
                 </div>
               )}
 
+=======
+>>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
               {/* Before / After preview */}
               {hasText(transformationPreview.before) && hasText(transformationPreview.after) && transformationPreview.before !== transformationPreview.after && (
                 <div className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -2215,7 +2258,11 @@ const Analysis = () => {
           {activeTab === "recruiter" && !hasRecruiterAnalysis && (
             <div className="text-center py-16 space-y-3">
               <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+<<<<<<< HEAD
               <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل المجند." : "No recruiter analysis data."}</p>
+=======
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل مسئول التوظيف." : "No recruiter analysis data."}</p>
+>>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
               <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
             </div>
           )}
