@@ -144,18 +144,18 @@ export const BreakdownCard = ({
         <div className={`h-full rounded-full ${scoreColor(score)}`} style={{ width: `${score}%` }} />
       </div>
 
-      <div className="space-y-2 text-sm font-body">
-        <div>
+      <div className="space-y-2 text-sm font-body w-full">
+        <div className="break-words">
           <span className="font-medium text-muted-foreground">{t.analysis.currentState}: </span>
-          <span className="text-foreground">{currentState}</span>
+          <span className="text-foreground leading-6">{currentState}</span>
         </div>
-        <div>
+        <div className="break-words">
           <span className="font-medium text-destructive">{t.analysis.problem}: </span>
-          <span className="text-foreground">{problem}</span>
+          <span className="text-foreground leading-6">{problem}</span>
         </div>
-        <div>
+        <div className="break-words">
           <span className="font-medium text-success">{t.analysis.recommendation}: </span>
-          <span className="text-foreground">{improvement}</span>
+          <span className="text-foreground leading-6">{improvement}</span>
         </div>
       </div>
     </div>
@@ -177,7 +177,7 @@ export const RecruiterItem = ({ label, score, comment }: RecruiterItemProps) => 
     <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden mb-2">
       <div className={`h-full rounded-full ${scoreColor(score)}`} style={{ width: `${score}%` }} />
     </div>
-    <p className="text-sm text-muted-foreground font-body">{comment}</p>
+    <p className="text-sm text-muted-foreground font-body break-words leading-6">{comment}</p>
   </div>
 );
 
@@ -232,8 +232,8 @@ export const QuickImprovement = ({
           </span>
 
           <div>
-            <p className="text-sm font-body font-medium text-foreground leading-6">{description}</p>
-            <p className="text-sm font-body text-muted-foreground mt-1 leading-6">→ {actionStep}</p>
+            <p className="text-sm font-body font-medium text-foreground leading-6 break-words">{description}</p>
+            <p className="text-sm font-body text-muted-foreground mt-1 leading-6 break-words">→ {actionStep}</p>
           </div>
         </div>
 
@@ -258,10 +258,20 @@ interface InterviewQuestionProps {
 
 export const InterviewQuestion = ({ index, question, direction }: InterviewQuestionProps) => (
   <div className="p-4 bg-card rounded-xl border border-border">
-    <p className="text-sm font-display font-semibold text-foreground mb-1">
+    <p
+      className="text-sm font-display font-semibold text-foreground mb-2 break-words leading-6"
+      dir="ltr"
+      style={{ textAlign: "left" }}
+    >
       {index}. {question}
     </p>
-    <p className="text-sm font-body text-muted-foreground">💡 {direction}</p>
+    <p
+      className="text-sm font-body text-muted-foreground break-words leading-6"
+      dir="ltr"
+      style={{ textAlign: "left" }}
+    >
+      💡 {direction}
+    </p>
   </div>
 );
 

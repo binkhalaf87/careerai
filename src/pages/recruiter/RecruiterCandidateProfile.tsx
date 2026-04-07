@@ -45,6 +45,8 @@ import {
   Video,
   Clock,
   TrendingUp,
+  RefreshCw,
+  Info,
 } from "lucide-react";
 import {
   useCandidateJobMatches,
@@ -56,6 +58,7 @@ import {
 import { NextStepCard, CandidateStatusBadge, JourneyProgressBar } from "@/components/recruiter/NextStepCard";
 import { StartInterviewButton } from "@/components/recruiter/StartInterviewButton";
 import { useCandidateInterviewSessions } from "@/hooks/useInterviewJourney";
+import { mapAnalysisResponse, type MappedAnalysis } from "@/lib/analysisMapper";
 import {
   generateAndPersistCandidateAnalysis,
   loadCandidateAnalysisHistory,
@@ -97,6 +100,10 @@ interface CandidateData {
   latest_analysis_score: number | null;
   latest_analysis_at: string | null;
   latest_analysis_version: string | null;
+  latest_model_name: string | null;
+  latest_prompt_version: string | null;
+  latest_normalizer_version: string | null;
+  latest_score_engine_version: string | null;
   interview_score: number | null;
   interview_recommendation: string | null;
   interview_results: any;
@@ -304,73 +311,7 @@ function getExperienceLabel(years: number | null | undefined, ar: boolean) {
   if (years < 6) return "Mid-Level";
   return "Senior";
 }
-function normalizeStringArray(input: any): string[] {
-  if (Array.isArray(input)) return input.map((i) => String(i || "").trim()).filter(Boolean);
-  if (typeof input === "string" && input.trim())
-    return input
-      .split(/\n|•|- /)
-      .map((i) => i.trim())
-      .filter(Boolean);
-  return [];
-}
-function normalizeNumber(value: any): number | null {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.max(0, Math.min(100, Math.round(num))) : null;
-}
-function firstNonEmpty(values: any): string {
-  const list = Array.isArray(values) ? values : [values];
-  for (const v of list) if (typeof v === "string" && v.trim()) return v.trim();
-  return "";
-}
-function normalizeReport(raw: any) {
-  const executive = raw?.executive_hiring_summary || {};
-  const scoringTable = raw?.scoring_table || {};
-  const hiringRecommendation = raw?.hiring_recommendation || {};
-  const strengths = normalizeStringArray(raw?.strengths || raw?.top_strengths);
-  const risks = normalizeStringArray(raw?.risks || raw?.concerns || raw?.red_flags);
-  const missingRequirements = normalizeStringArray(raw?.missing_requirements || raw?.missing_info);
-  const interviewFocusAreas = normalizeStringArray(raw?.interview_focus_areas || raw?.interview_focus);
-  return {
-    executive: {
-      candidateLevel: firstNonEmpty([executive?.candidate_level, raw?.seniority_estimate]),
-      bestFitRoles: normalizeStringArray(executive?.best_fit_roles || raw?.role_fit),
-      overallFitScore:
-        normalizeNumber(executive?.overall_fit_score) ||
-        normalizeNumber(scoringTable?.role_match) ||
-        normalizeNumber(raw?.score),
-    },
-    summaryText: firstNonEmpty([executive?.summary, raw?.executive_summary]) || firstNonEmpty(strengths) || "—",
-    strengths,
-    risks,
-    missingRequirements,
-    interviewFocusAreas,
-    decision: firstNonEmpty([hiringRecommendation?.decision, raw?.recommendation, raw?.fit_label]),
-    reasoning: firstNonEmpty([hiringRecommendation?.reasoning]),
-    whyThisCandidate: firstNonEmpty([raw?.why_this_candidate, strengths[0]]),
-    whyNotThisCandidate: firstNonEmpty([raw?.why_not_this_candidate, risks[0]]),
-    scoreItems: [
-      { key: "ats", label: "ATS Compatibility", value: normalizeNumber(scoringTable?.ats_compatibility) },
-      { key: "role", label: "Role Match", value: normalizeNumber(scoringTable?.role_match) },
-      {
-        key: "depth",
-        label: "Experience Depth",
-        value: normalizeNumber(scoringTable?.experience_depth || raw?.experience_quality_score),
-      },
-      {
-        key: "skills",
-        label: "Skill Relevance",
-        value: normalizeNumber(scoringTable?.skill_relevance || raw?.skills_match_score),
-      },
-      {
-        key: "progress",
-        label: "Career Progression",
-        value: normalizeNumber(scoringTable?.career_progression || raw?.career_progression_score),
-      },
-      { key: "stability", label: "Stability", value: normalizeNumber(raw?.stability_score) },
-      { key: "education", label: "Education Strength", value: normalizeNumber(raw?.education_strength_score) },
-    ],
-  };
-}
+// normalizeReport replaced by mapAnalysisResponse from @/lib/analysisMapper
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const RecruiterCandidateProfile = () => {
@@ -514,14 +455,15 @@ const RecruiterCandidateProfile = () => {
     );
 
   const activeAnalysisJson = selectedHistory?.analysis_json || candidate.latest_analysis_json || candidate.ai_report;
-  const report = normalizeReport(activeAnalysisJson);
+  const report: MappedAnalysis = mapAnalysisResponse(activeAnalysisJson);
   const bestJobMatchScore = jobMatches.length ? jobMatches[0].match_score : null;
   const atsScore =
-    selectedHistory?.score ??
-    candidate.latest_analysis_score ??
-    candidate.ats_score ??
-    report.scoreItems.find((s) => s.key === "ats")?.value ??
-    null;
+    report.overall_score > 0
+      ? report.overall_score
+      : selectedHistory?.score ??
+        candidate.latest_analysis_score ??
+        candidate.ats_score ??
+        null;
   const displayedFitScore = bestJobMatchScore ?? candidate.fit_score ?? null;
   const hasInterviewSession = !!latestSessionId;
 
@@ -695,61 +637,235 @@ const RecruiterCandidateProfile = () => {
             </Card>
           ) : (
             <>
-              <Card className="p-4">
-                <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">
-                      {ar ? "التحليل الحالي" : "Saved Analysis"}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {candidate.latest_analysis_at
-                        ? new Date(candidate.latest_analysis_at).toLocaleString()
-                        : ar
-                          ? "تحليل قديم متوافق"
-                          : "Legacy analysis"}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={handleGenerateReport}
-                    disabled={generatingReport || !candidate.extracted_text}
-                  >
-                    {generatingReport ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-                    {ar ? "تحديث تحليل AI" : "Refresh AI Analysis"}
-                  </Button>
-                </div>
-                {!!analysisHistory.length && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-semibold text-muted-foreground">
-                      {ar ? "التحليلات السابقة" : "Previous Analyses"}
-                    </h4>
-                    {analysisHistory.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                        <div>
-                          <div className="text-sm font-medium">{new Date(item.created_at).toLocaleString()}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {ar ? "النتيجة" : "Score"}: {item.score ?? "—"} · {item.analysis_type || "manual"}
-                          </div>
+              {/* ── Analysis Provenance Banner ─────────────────────────────── */}
+              {(() => {
+                const isViewingHistory = !!selectedHistory;
+                const activeAt = isViewingHistory
+                  ? selectedHistory!.created_at
+                  : candidate.latest_analysis_at;
+                const activeVersion = isViewingHistory
+                  ? (selectedHistory!.analysis_version ?? null)
+                  : (candidate.latest_analysis_version ?? null);
+                const activeModel = isViewingHistory
+                  ? (selectedHistory!.model_name ?? null)
+                  : (candidate.latest_model_name ?? null);
+                const activePrompt = isViewingHistory
+                  ? (selectedHistory!.prompt_version ?? null)
+                  : (candidate.latest_prompt_version ?? null);
+                const activeScore = isViewingHistory
+                  ? (selectedHistory!.score ?? selectedHistory!.overall_score ?? null)
+                  : (candidate.latest_analysis_score ?? null);
+
+                // Staleness: analysis older than 30 days is "stale"
+                const STALE_DAYS = 30;
+                const ageMs = activeAt ? Date.now() - new Date(activeAt).getTime() : null;
+                const ageDays = ageMs != null ? Math.floor(ageMs / 86_400_000) : null;
+                const isStale = ageDays != null && ageDays > STALE_DAYS;
+                const isLegacy = !activeVersion; // pre-versioning rows
+
+                // Banner colour coding
+                const bannerCls = isViewingHistory
+                  ? "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30"
+                  : isStale || isLegacy
+                  ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30"
+                  : "border-border bg-muted/30";
+
+                const badgeCls = isViewingHistory
+                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                  : isStale
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                  : isLegacy
+                  ? "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300"
+                  : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
+
+                const statusLabel = isViewingHistory
+                  ? (ar ? "عرض سجل قديم" : "Viewing historical record")
+                  : isLegacy
+                  ? (ar ? "تحليل قديم — بدون بيانات إصدار" : "Legacy — no version metadata")
+                  : isStale
+                  ? (ar ? `قديم — ${ageDays} يوم` : `Stale — ${ageDays} days old`)
+                  : (ar ? "حديث" : "Current");
+
+                return (
+                  <Card className={`p-4 border ${bannerCls}`}>
+                    {/* Top row: status + re-run button */}
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="space-y-2 min-w-0">
+                        {/* Status badge + label */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${badgeCls}`}>
+                            {isViewingHistory ? <Clock size={10} /> : isStale || isLegacy ? <Info size={10} /> : <RefreshCw size={10} />}
+                            {statusLabel}
+                          </span>
+                          {activeAt && (
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(activeAt).toLocaleString()}
+                              {ageDays != null && ageDays > 0 && !isViewingHistory && (
+                                <span className="ml-1">({ageDays}d ago)</span>
+                              )}
+                            </span>
+                          )}
+                          {!activeAt && (
+                            <span className="text-xs text-muted-foreground italic">
+                              {ar ? "تاريخ غير معروف" : "Date unknown"}
+                            </span>
+                          )}
                         </div>
-                        <Button
-                          size="sm"
-                          variant={selectedHistory?.id === item.id ? "default" : "outline"}
-                          onClick={() => setSelectedHistory(item)}
-                        >
-                          {ar ? "فتح" : "Open"}
-                        </Button>
+
+                        {/* Metadata pills row */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeScore != null && (
+                            <span className="text-[10px] px-2 py-0.5 rounded border border-border bg-background text-foreground font-mono">
+                              Score: {activeScore}
+                            </span>
+                          )}
+                          {activeModel ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded border border-border bg-background text-muted-foreground font-mono">
+                              {activeModel}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded border border-dashed border-border bg-background text-muted-foreground/60 italic">
+                              {ar ? "النموذج غير محفوظ" : "model unknown"}
+                            </span>
+                          )}
+                          {activeVersion ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded border border-border bg-background text-muted-foreground font-mono">
+                              schema {activeVersion}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded border border-dashed border-border bg-background text-muted-foreground/60 italic">
+                              {ar ? "إصدار غير محفوظ" : "version unknown"}
+                            </span>
+                          )}
+                          {activePrompt && (
+                            <span className="text-[10px] px-2 py-0.5 rounded border border-border bg-background text-muted-foreground font-mono">
+                              prompt {activePrompt}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Stale / legacy warning message */}
+                        {(isStale || isLegacy) && !isViewingHistory && (
+                          <p className="text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                            <Info size={11} />
+                            {isLegacy
+                              ? (ar
+                                  ? "هذا التحليل تم إنشاؤه قبل نظام الإصدارات — يُنصح بإعادة التحليل للحصول على بيانات كاملة"
+                                  : "Generated before versioning was introduced — re-run recommended for full metadata")
+                              : (ar
+                                  ? `هذا التحليل أقدم من ${STALE_DAYS} يوماً — يُنصح بإعادة التحليل للحصول على نتائج محدّثة`
+                                  : `This analysis is over ${STALE_DAYS} days old — re-run recommended for fresh results`)}
+                          </p>
+                        )}
+
+                        {/* Viewing history notice */}
+                        {isViewingHistory && (
+                          <p className="text-[11px] text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                            <Info size={11} />
+                            {ar
+                              ? "أنت تعرض سجلاً تاريخياً — ليس التحليل الحالي"
+                              : "You are viewing a historical record — not the current analysis"}
+                          </p>
+                        )}
                       </div>
-                    ))}
-                    {!!selectedHistory && (
-                      <div className="flex justify-end">
-                        <Button size="sm" variant="ghost" onClick={() => setSelectedHistory(null)}>
-                          {ar ? "العودة لأحدث نسخة" : "Back to Latest"}
-                        </Button>
+
+                      {/* Re-run button */}
+                      <Button
+                        size="sm"
+                        variant={isStale || isLegacy ? "default" : "outline"}
+                        onClick={handleGenerateReport}
+                        disabled={generatingReport || !candidate.extracted_text}
+                        className="shrink-0"
+                      >
+                        {generatingReport
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                          : <RefreshCw size={13} className="mr-1.5" />}
+                        {ar ? "إعادة التحليل" : "Re-run Analysis"}
+                      </Button>
+                    </div>
+
+                    {/* ── History list ──────────────────────────────────────── */}
+                    {!!analysisHistory.length && (
+                      <div className="mt-4 pt-4 border-t border-border/60 space-y-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          {ar ? "سجل التحليلات" : "Analysis History"} ({analysisHistory.length})
+                        </h4>
+                        {analysisHistory.map((item) => {
+                          const itemAge = Math.floor((Date.now() - new Date(item.created_at).getTime()) / 86_400_000);
+                          const itemIsSelected = selectedHistory?.id === item.id;
+                          const itemModel = item.model_name ?? null;
+                          const itemVersion = item.analysis_version ?? null;
+                          const itemScore = item.score ?? item.overall_score ?? null;
+                          return (
+                            <div
+                              key={item.id}
+                              className={`flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors ${
+                                itemIsSelected
+                                  ? "border-primary bg-primary/5"
+                                  : "border-border hover:bg-muted/40"
+                              }`}
+                            >
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-medium tabular-nums">
+                                    {new Date(item.created_at).toLocaleString()}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">({itemAge}d ago)</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {itemScore != null && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-mono">
+                                      Score: {itemScore}
+                                    </span>
+                                  )}
+                                  {itemModel ? (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-mono text-muted-foreground">
+                                      {itemModel}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted italic text-muted-foreground/60">
+                                      model unknown
+                                    </span>
+                                  )}
+                                  {itemVersion ? (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-mono text-muted-foreground">
+                                      v{itemVersion}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted italic text-muted-foreground/60">
+                                      legacy
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                    {item.analysis_type || "manual"}
+                                  </span>
+                                </div>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant={itemIsSelected ? "default" : "outline"}
+                                onClick={() => setSelectedHistory(itemIsSelected ? null : item)}
+                                className="shrink-0"
+                              >
+                                {itemIsSelected
+                                  ? (ar ? "إغلاق" : "Close")
+                                  : (ar ? "فتح" : "Open")}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                        {!!selectedHistory && (
+                          <div className="flex justify-end pt-1">
+                            <Button size="sm" variant="ghost" onClick={() => setSelectedHistory(null)}>
+                              {ar ? "العودة للتحليل الحالي" : "Back to Current Analysis"}
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
-              </Card>
+                  </Card>
+                );
+              })()}
 
               {/* ATS Score breakdown */}
               {atsScore != null && (
@@ -759,7 +875,7 @@ const RecruiterCandidateProfile = () => {
                     <h3 className="text-sm font-semibold text-foreground">ATS Score Breakdown</h3>
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
-                    {report.scoreItems.map(
+                    {report.section_score_items.map(
                       (item) =>
                         item.value != null && (
                           <div key={item.key} className="space-y-1.5">
@@ -781,22 +897,22 @@ const RecruiterCandidateProfile = () => {
                   <h3 className="text-sm font-semibold text-foreground mb-2">
                     {ar ? "الملخص التنفيذي" : "Executive Hiring Summary"}
                   </h3>
-                  <p className="text-sm text-muted-foreground leading-7">{report.summaryText}</p>
+                  <p className="text-sm text-muted-foreground leading-7">{report.summary || "—"}</p>
                 </Card>
                 <Card className="p-4 space-y-3">
                   <div>
                     <div className="text-[11px] text-muted-foreground mb-1">Recommended Role(s)</div>
-                    <div className="text-sm font-medium">{report.executive.bestFitRoles.join(", ") || "—"}</div>
+                    <div className="text-sm font-medium">{report.best_fit_roles.join(", ") || "—"}</div>
                   </div>
                   <div>
                     <div className="text-[11px] text-muted-foreground mb-1">Hiring Decision</div>
-                    <div className={`text-sm font-medium ${getDecisionColor(report.decision)}`}>
-                      {report.decision || "—"}
+                    <div className={`text-sm font-medium ${getDecisionColor(report.hiring_decision)}`}>
+                      {report.hiring_decision || "—"}
                     </div>
                   </div>
                   <div>
                     <div className="text-[11px] text-muted-foreground mb-1">Reasoning</div>
-                    <div className="text-sm text-muted-foreground">{report.reasoning || "—"}</div>
+                    <div className="text-sm text-muted-foreground">{report.hiring_reasoning || "—"}</div>
                   </div>
                 </Card>
               </div>
@@ -815,21 +931,21 @@ const RecruiterCandidateProfile = () => {
                     title: ar ? "المخاطر" : "Risks",
                     icon: ShieldAlert,
                     cls: "text-destructive",
-                    items: report.risks,
+                    items: report.weaknesses,
                     empty: "No major risk flags",
                   },
                   {
                     title: ar ? "متطلبات ناقصة" : "Missing Requirements",
                     icon: AlertTriangle,
                     cls: "text-yellow-600",
-                    items: report.missingRequirements,
+                    items: report.missing_requirements,
                     empty: "None identified",
                   },
                   {
                     title: ar ? "محاور المقابلة" : "Interview Focus Areas",
                     icon: CircleHelp,
                     cls: "text-primary",
-                    items: report.interviewFocusAreas,
+                    items: report.interview_focus_areas,
                     empty: "None",
                   },
                 ].map(({ title, icon: Icon, cls, items, empty }) => (
@@ -840,7 +956,7 @@ const RecruiterCandidateProfile = () => {
                     {items.length ? (
                       <ul className="space-y-2">
                         {items.map((item, i) => (
-                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 leading-7">
+                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 leading-6 break-words">
                             <span className="mt-2 h-1.5 w-1.5 rounded-full bg-current shrink-0" />
                             <span>{item}</span>
                           </li>
@@ -876,9 +992,12 @@ const RecruiterCandidateProfile = () => {
               </div>
             )}
             {candidate.extracted_text ? (
-              <pre className="text-sm text-muted-foreground font-body whitespace-pre-wrap leading-relaxed max-h-[60vh] overflow-y-auto">
+              <div
+                dir="ltr"
+                className="text-sm text-muted-foreground font-body whitespace-pre-wrap break-words leading-6 w-full max-w-none text-left"
+              >
                 {candidate.extracted_text}
-              </pre>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {ar ? "لا يوجد نص مستخرج" : "No extracted text available"}

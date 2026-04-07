@@ -10,7 +10,16 @@ export interface StoredAnalysisRow {
   weaknesses: string[] | null;
   suggestions: string[] | null;
   language: string | null;
+  // Legacy column — still the primary full analysis store
   full_analysis: Record<string, unknown> | null;
+  // Standardised alias (mirrors full_analysis via DB trigger)
+  analysis_json: Record<string, unknown> | null;
+  // Versioning metadata — null on rows created before this migration
+  analysis_version: string | null;
+  model_name: string | null;
+  prompt_version: string | null;
+  normalizer_version: string | null;
+  score_engine_version: string | null;
   created_at?: string;
 }
 
@@ -35,7 +44,7 @@ export function useAnalysis(resumeId?: string | null) {
         const { data, error } = await supabase
           .from("analyses")
           .select(
-            "id, resume_id, overall_score, section_scores, strengths, weaknesses, suggestions, language, full_analysis, created_at",
+            "id, resume_id, overall_score, section_scores, strengths, weaknesses, suggestions, language, full_analysis, analysis_json, analysis_version, model_name, prompt_version, normalizer_version, score_engine_version, created_at",
           )
           .eq("resume_id", resumeId)
           .order("created_at", { ascending: false })

@@ -426,39 +426,3 @@ export function normalizeResume(rawText: string): LegacyNormalizedResume {
 }
 
 
-
-
-export type NormalizedResumeAnalysis = {
-  name: string | null;
-  job_title: string | null;
-  summary: string | null;
-  skills: string[];
-  experience: string[];
-  education: string[];
-  certifications: string[];
-  raw_text: string;
-};
-
-export function normalizeResumeForAnalysis(rawText: string): NormalizedResumeAnalysis {
-  const structured = parseResumeTextRobust(rawText);
-  const toList = (value: string) =>
-    String(value || "")
-      .split(/
-+/)
-      .map((item) => cleanArtifacts(item).replace(/^•\s*/, "").trim())
-      .filter(Boolean);
-
-  return {
-    name: structured.name || null,
-    job_title: structured.job_title || null,
-    summary: structured.summary || null,
-    skills: toList(structured.skills),
-    experience: toList(structured.experience),
-    education: toList(structured.education),
-    certifications: toList(structured.certifications),
-    raw_text: cleanArtifacts(String(rawText || "")).replace(/
-{3,}/g, "
-
-").trim(),
-  };
-}

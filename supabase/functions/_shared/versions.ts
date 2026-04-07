@@ -1,0 +1,53 @@
+/**
+ * TALENTRY — Analysis Version Constants
+ * ──────────────────────────────────────────────────────────────────────────────
+ * Single source of truth for every version tag written to the database.
+ *
+ * WHEN TO BUMP:
+ *   ANALYSIS_SCHEMA_VERSION  — bump when NormalizedAnalysis type shape changes
+ *   PROMPT_VERSION           — bump when buildPrompt() logic changes
+ *   NORMALIZER_VERSION       — bump when resume-normalizer.ts logic changes
+ *   SCORE_ENGINE_VERSION     — bump when ats-engine.ts scoring formula changes
+ *
+ * MODEL_NAME is read from ANALYSIS_MODEL constant in analysis-core.ts at
+ * runtime; it is not hardcoded here.
+ *
+ * Usage (edge functions):
+ *   import { ANALYSIS_VERSIONS } from "../_shared/versions.ts";
+ *
+ * Usage (frontend):
+ *   import { ANALYSIS_VERSIONS } from "@/lib/analysisVersions";
+ *   (copy of this file — kept in sync manually)
+ */
+
+export const ANALYSIS_VERSIONS = {
+  /**
+   * Version of the NormalizedAnalysis JSON schema.
+   * Consumers can detect breaking schema changes by comparing this value
+   * with what is stored in analysis_version on a saved row.
+   */
+  ANALYSIS_SCHEMA_VERSION: "2.1.0",
+
+  /**
+   * Version of the master prompt in analysis-core.ts buildPrompt().
+   * Bump this whenever the system prompt or user prompt wording changes
+   * in a way that would alter the AI's output structure or quality.
+   */
+  PROMPT_VERSION: "master-v3.0",
+
+  /**
+   * Version of supabase/functions/_shared/resume-normalizer.ts.
+   * Bump when normalizeResumeText() or prepareTextForPrompt() logic changes.
+   */
+  NORMALIZER_VERSION: "1.2.0",
+
+  /**
+   * Version of supabase/functions/_shared/ats-engine.ts.
+   * Bump when computeAtsScores() weights, thresholds, or factor logic changes.
+   * Current formula: sections 20% + skills 20% + clarity 15% + achievements 15%
+   *                  + keywords 15% + formatting 10% + summary 5%
+   */
+  SCORE_ENGINE_VERSION: "2.0.0",
+} as const;
+
+export type AnalysisVersions = typeof ANALYSIS_VERSIONS;

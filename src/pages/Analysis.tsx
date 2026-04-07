@@ -48,6 +48,8 @@ import { toast } from "sonner";
 import { getStoredResumeData, useUserResume } from "@/hooks/useUserResume";
 import { useAnalysis } from "@/hooks/useAnalysis";
 import { analyzeResumeATS, type StructuredResume as AtsStructuredResume } from "@/lib/resume-ats-engine";
+import { ANALYSIS_VERSIONS } from "@/lib/analysisVersions";
+import { mapAnalysisResponse, toRewriteIssuesProps, toRewriteSummaryProps } from "@/lib/analysisMapper";
 import {
   ScoreBar,
   BreakdownCard,
@@ -914,7 +916,15 @@ const Analysis = () => {
             weaknesses: mergedAnalysis.executive_summary?.main_risks || [],
             suggestions: mergedAnalysis.quick_improvements?.map((q) => q.description) || [],
             language: reportLanguage,
+            // ── Canonical full analysis (both column names kept for compat) ──
             full_analysis: mergedAnalysis,
+            analysis_json: mergedAnalysis,
+            // ── Versioning metadata ──────────────────────────────────────────
+            analysis_version:     ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION,
+            model_name:           "gpt-4o",
+            prompt_version:       ANALYSIS_VERSIONS.PROMPT_VERSION,
+            normalizer_version:   ANALYSIS_VERSIONS.NORMALIZER_VERSION,
+            score_engine_version: ANALYSIS_VERSIONS.SCORE_ENGINE_VERSION,
           } as any)
           .select("id")
           .single();
@@ -1508,7 +1518,7 @@ const Analysis = () => {
 
       <main className="container max-w-7xl py-6 px-4">
         {/* ══ HERO: SCORE + SUMMARY CARD ══ */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-violet-600/10 via-background to-indigo-600/6 p-6 mb-6 shadow-lg shadow-violet-500/5">
+        <div className="relative rounded-2xl border border-border/80 bg-gradient-to-br from-violet-600/10 via-background to-indigo-600/6 p-6 mb-6 shadow-lg shadow-violet-500/5">
           {/* BG blobs */}
           <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/6 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-40 h-40 bg-indigo-500/6 rounded-full blur-2xl pointer-events-none" />
@@ -1613,7 +1623,7 @@ const Analysis = () => {
             <div className="space-y-5">
               {/* Executive Summary */}
               {result.executive_summary && (
-                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="rounded-2xl border border-border bg-card">
                   <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
                     <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
                       <Brain className="w-4.5 h-4.5 text-violet-500" style={{width:"18px",height:"18px"}} />
@@ -1627,7 +1637,9 @@ const Analysis = () => {
                     {hasText(result.executive_summary.summary_paragraphs) &&
                       !result.executive_summary.summary_paragraphs.startsWith("This score was generated") &&
                       !result.executive_summary.summary_paragraphs.startsWith("تم إنشاء هذا التقييم") && (
-                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap bg-muted/30 rounded-xl p-4">{result.executive_summary.summary_paragraphs}</p>
+                        <p
+                          className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words bg-muted/30 rounded-xl p-4 w-full max-w-none"
+                        >{result.executive_summary.summary_paragraphs}</p>
                       )}
                     <div className="grid md:grid-cols-3 gap-3">
                       {hasArray(result.executive_summary.best_fit_roles) && (
@@ -1678,9 +1690,44 @@ const Analysis = () => {
                 </div>
               )}
 
+              {/* Missing Keywords Card */}
+              {(() => {
+                const mapped = mapAnalysisResponse(result);
+                const kws = mapped.missing_keywords.filter(k => k.length >= 2 && k.length <= 40);
+                if (!kws.length) return null;
+                return (
+                  <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-amber-500/3">
+                    <div className="flex items-center gap-3 p-5 border-b border-orange-500/15">
+                      <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                        <Key className="w-4 h-4 text-orange-500" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-foreground">
+                          {ar ? "كلمات مفتاحية ناقصة" : "Missing Keywords"}
+                          <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/20">{kws.length}</span>
+                        </h2>
+                        <p className="text-xs text-muted-foreground">{ar ? "كلمات يبحث عنها ATS ولم تظهر في سيرتك" : "ATS keywords absent from your resume"}</p>
+                      </div>
+                    </div>
+                    <div className="p-5">
+                      <div className="flex flex-wrap gap-2">
+                        {kws.map((kw, i) => (
+                          <span key={i} className="text-xs px-3 py-1.5 rounded-full border border-orange-500/25 bg-orange-500/8 text-orange-700 dark:text-orange-300 font-medium" dir="ltr">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-3">
+                        {ar ? "أضف هذه الكلمات في قسم المهارات أو الملخص المهني لتحسين نتيجة ATS." : "Add these to your Skills section or Professional Summary to improve ATS score."}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Priority Fixes */}
               {hasArray(priorityFixes) && (
-                <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 overflow-hidden">
+                <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3">
                   <div className="flex items-center justify-between p-5 border-b border-amber-500/15">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
@@ -1717,7 +1764,7 @@ const Analysis = () => {
 
               {/* Before / After preview */}
               {hasText(transformationPreview.before) && hasText(transformationPreview.after) && transformationPreview.before !== transformationPreview.after && (
-                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="rounded-2xl border border-border bg-card">
                   <div className="flex items-center gap-3 p-5 border-b border-border/60">
                     <Wand2 className="w-4 h-4 text-violet-500" />
                     <h2 className="text-sm font-bold text-foreground">{ar ? "مثال: قبل وبعد التحسين" : "Before & After Preview"}</h2>
@@ -1725,11 +1772,11 @@ const Analysis = () => {
                   <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
                     <div className="p-5 space-y-2">
                       <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-muted-foreground/50" />{ar ? "قبل" : "Before"}</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-lg p-3">{transformationPreview.before}</p>
+                      <p className="text-sm text-muted-foreground leading-relaxed break-words bg-muted/30 rounded-lg p-3" dir="ltr" style={{textAlign:"left"}}>{transformationPreview.before}</p>
                     </div>
                     <div className="p-5 space-y-2">
                       <h4 className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" />{ar ? "بعد" : "After"}</h4>
-                      <p className="text-sm text-foreground leading-relaxed bg-violet-500/5 rounded-lg p-3">{transformationPreview.after}</p>
+                      <p className="text-sm text-foreground leading-relaxed break-words bg-violet-500/5 rounded-lg p-3" dir="ltr" style={{textAlign:"left"}}>{transformationPreview.after}</p>
                     </div>
                   </div>
                 </div>
@@ -1742,7 +1789,7 @@ const Analysis = () => {
             <div className="space-y-5">
               {/* Section scores full */}
               {hasObject(result.section_scores) && (
-                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="rounded-2xl border border-border bg-card">
                   <div className="flex items-center justify-between p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
@@ -1774,7 +1821,7 @@ const Analysis = () => {
 
               {/* ATS Breakdown */}
               {hasObject(result.ats_breakdown || null) && (
-                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="rounded-2xl border border-border bg-card">
                   <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-indigo-500/5 to-transparent">
                     <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
                       <ListChecks className="w-4 h-4 text-indigo-500" />
@@ -1802,7 +1849,7 @@ const Analysis = () => {
 
           {/* ── CAREER TAB ── */}
           {activeTab === "career" && hasCareer && (
-            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="rounded-2xl border border-border bg-card">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
                 <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
                   <Briefcase className="w-4 h-4 text-emerald-500" />
@@ -1871,7 +1918,7 @@ const Analysis = () => {
                 {hasText(result.career_recommendations.linkedin_improvements) && (
                   <div className="p-4 rounded-xl border border-border bg-background/60">
                     <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">LinkedIn / Portfolio</h4>
-                    <p className="text-sm text-foreground whitespace-pre-wrap">{result.career_recommendations.linkedin_improvements}</p>
+                    <p className="text-sm text-foreground whitespace-pre-wrap break-words leading-6 w-full max-w-none" dir="ltr" style={{textAlign:"left"}}>{result.career_recommendations.linkedin_improvements}</p>
                   </div>
                 )}
               </div>
@@ -1880,7 +1927,7 @@ const Analysis = () => {
 
           {/* ── SALARY TAB ── */}
           {activeTab === "salary" && hasSalary && (
-            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="rounded-2xl border border-border bg-card">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
                 <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
                   <DollarSign className="w-4 h-4 text-emerald-500" />
@@ -1938,7 +1985,7 @@ const Analysis = () => {
 
           {/* ── RECRUITER TAB ── */}
           {activeTab === "recruiter" && hasRecruiterAnalysis && (
-            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="rounded-2xl border border-border bg-card">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-blue-500/5 to-transparent">
                 <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
                   <Eye className="w-4 h-4 text-blue-500" />
@@ -1962,7 +2009,7 @@ const Analysis = () => {
 
           {/* ── IMPROVEMENTS TAB ── */}
           {activeTab === "improvements" && hasQuickImprovements && (
-            <div className="rounded-2xl border border-amber-500/20 bg-card overflow-hidden">
+            <div className="rounded-2xl border border-amber-500/20 bg-card">
               <div className="flex items-center gap-3 p-5 border-b border-amber-500/15 bg-gradient-to-r from-amber-500/5 to-transparent">
                 <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
                   <Sparkles className="w-4 h-4 text-amber-500" />
@@ -1990,7 +2037,7 @@ const Analysis = () => {
           {/* ── INTERVIEW TAB ── */}
           {activeTab === "interview" && hasInterviewQuestions && (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="rounded-2xl border border-border bg-card">
                 <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
                   <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
                     <MessageSquare className="w-4 h-4 text-violet-500" />
@@ -2023,10 +2070,10 @@ const Analysis = () => {
           {/* ── ENHANCED CV TAB ── */}
           {activeTab === "enhanced" && (
             <div className="space-y-5">
-              <RewriteSummaryCard resume={storedResumeData} analysis={{ overall_score: result?.ats_score || 0, full_analysis: result as unknown as Record<string, unknown> }} improvementSummary={priorityFixes.slice(0, 4).map(item => item.title)} />
-              <RewriteIssuesCard analysis={{ weaknesses: result?.executive_summary?.main_risks || [], suggestions: result?.quick_improvements?.map(item => item.action_step || item.description) || [], full_analysis: result as unknown as Record<string, unknown> }} />
+              <RewriteSummaryCard resume={storedResumeData} analysis={toRewriteSummaryProps(mapAnalysisResponse(result))} improvementSummary={priorityFixes.slice(0, 4).map(item => item.title)} />
+              <RewriteIssuesCard analysis={toRewriteIssuesProps(mapAnalysisResponse(result))} />
               {/* Corrections */}
-              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="rounded-2xl border border-border bg-card">
                 <div className="flex items-center gap-3 p-5 border-b border-border/60">
                   <CheckCircle2 className="w-4 h-4 text-violet-500" />
                   <h2 className="text-sm font-bold text-foreground">{ar ? "مراجعة البيانات المستخرجة" : "Review Extracted Data"}</h2>

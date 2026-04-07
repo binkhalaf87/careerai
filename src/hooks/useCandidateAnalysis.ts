@@ -1,4 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
+import { ANALYSIS_VERSIONS } from "@/lib/analysisVersions";
+import { mapAnalysisResponse, deriveMappedScore } from "@/lib/analysisMapper";
 
 export const CANDIDATE_ANALYSIS_VERSION = "recruiter-analysis-v1";
 
@@ -16,7 +18,15 @@ export interface CandidateAnalysisHistoryItem {
   analysis_html: string | null;
   analysis_json: any;
   score: number | null;
+  // Standardised alias for score (mirrors score via DB trigger)
+  overall_score: number | null;
   analysis_type: string | null;
+  // Versioning metadata — null on rows created before this migration
+  analysis_version: string | null;
+  model_name: string | null;
+  prompt_version: string | null;
+  normalizer_version: string | null;
+  score_engine_version: string | null;
   created_at: string;
   created_by: string | null;
 }
@@ -36,20 +46,9 @@ function toArray(value: unknown): string[] {
   return [];
 }
 
+/** @deprecated Use mapAnalysisResponse + deriveMappedScore instead */
 export function deriveAnalysisScore(report: any): number | null {
-  const candidates = [
-    report?.executive_hiring_summary?.overall_fit_score,
-    report?.scoring_table?.role_match,
-    report?.score,
-    report?.scoring_table?.ats_compatibility,
-  ];
-
-  for (const value of candidates) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return Math.max(0, Math.min(100, Math.round(parsed)));
-  }
-
-  return null;
+  return deriveMappedScore(mapAnalysisResponse(report));
 }
 
 export function buildAnalysisHtml(
@@ -58,14 +57,15 @@ export function buildAnalysisHtml(
 ) {
   const candidateName = options?.candidateName || "Candidate";
   const candidateTitle = options?.candidateTitle || "—";
-  const executive = report?.executive_hiring_summary || {};
-  const scoring = report?.scoring_table || {};
-  const recommendation = report?.hiring_recommendation || {};
-  const strengths = toArray(report?.strengths || report?.top_strengths);
-  const risks = toArray(report?.risks || report?.red_flags || report?.concerns);
-  const missing = toArray(report?.missing_requirements || report?.missing_info);
-  const focus = toArray(report?.interview_focus_areas || report?.interview_focus);
-  const score = deriveAnalysisScore(report);
+  const mapped = mapAnalysisResponse(report);
+  const executive = (report?.executive_hiring_summary || {}) as Record<string, unknown>;
+  const scoring = (report?.scoring_table || {}) as Record<string, unknown>;
+  const recommendation = (report?.hiring_recommendation || {}) as Record<string, unknown>;
+  const strengths = mapped.strengths;
+  const risks = mapped.weaknesses;
+  const missing = mapped.missing_requirements;
+  const focus = mapped.interview_focus_areas;
+  const score = mapped.overall_score > 0 ? mapped.overall_score : null;
 
   const renderList = (items: string[]) =>
     items.length
@@ -179,24 +179,28 @@ export async function persistCandidateAnalysis(args: {
 }) {
   const analysisType = args.analysisType || "manual_refresh";
   const report = args.analysis.report;
-  const atsScore = Number(report?.scoring_table?.ats_compatibility);
-  const fitScore = Number(
-    report?.executive_hiring_summary?.overall_fit_score || report?.scoring_table?.role_match || args.analysis.score,
-  );
-  const fitLabel =
-    report?.hiring_recommendation?.decision ||
-    report?.executive_hiring_summary?.hiring_decision ||
-    report?.recommendation ||
-    null;
+  const _mapped = mapAnalysisResponse(report);
+  const atsScore = _mapped.overall_score || 0;
+  const fitScore = _mapped.overall_score || Number(args.analysis.score) || 0;
+  const fitLabel = _mapped.hiring_decision || null;
 
   const historyInsert = {
     candidate_id: args.candidateId,
     resume_id: args.resumeId || null,
     analysis_html: args.analysis.html,
+    // ── Canonical analysis object ──────────────────────────────────────────
     analysis_json: report,
+    // ── Score (both column names kept for compat) ──────────────────────────
     score: args.analysis.score,
+    overall_score: args.analysis.score,
     analysis_type: analysisType,
     created_by: args.recruiterId,
+    // ── Versioning metadata ────────────────────────────────────────────────
+    analysis_version:     ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION,
+    model_name:           "gpt-4o",
+    prompt_version:       ANALYSIS_VERSIONS.PROMPT_VERSION,
+    normalizer_version:   ANALYSIS_VERSIONS.NORMALIZER_VERSION,
+    score_engine_version: ANALYSIS_VERSIONS.SCORE_ENGINE_VERSION,
   };
 
   const { error: historyError } = await supabase.from("candidate_analyses").insert(historyInsert);
@@ -213,7 +217,12 @@ export async function persistCandidateAnalysis(args: {
       latest_analysis_json: report,
       latest_analysis_score: args.analysis.score,
       latest_analysis_at: new Date().toISOString(),
-      latest_analysis_version: args.analysis.version,
+      // ── Versioning metadata on cache row ──────────────────────────────────
+      latest_analysis_version:        ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION,
+      latest_model_name:              "gpt-4o",
+      latest_prompt_version:          ANALYSIS_VERSIONS.PROMPT_VERSION,
+      latest_normalizer_version:      ANALYSIS_VERSIONS.NORMALIZER_VERSION,
+      latest_score_engine_version:    ANALYSIS_VERSIONS.SCORE_ENGINE_VERSION,
     } as any)
     .eq("id", args.candidateId)
     .eq("recruiter_id", args.recruiterId);
@@ -252,7 +261,7 @@ export async function generateAndPersistCandidateAnalysis(args: {
 export async function loadCandidateAnalysisHistory(candidateId: string) {
   const { data, error } = await supabase
     .from("candidate_analyses")
-    .select("id, candidate_id, resume_id, analysis_html, analysis_json, score, analysis_type, created_at, created_by")
+    .select("id, candidate_id, resume_id, analysis_html, analysis_json, score, overall_score, analysis_type, analysis_version, model_name, prompt_version, normalizer_version, score_engine_version, created_at, created_by")
     .eq("candidate_id", candidateId)
     .order("created_at", { ascending: false });
 

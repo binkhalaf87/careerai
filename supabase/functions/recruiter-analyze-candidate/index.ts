@@ -1,4 +1,21 @@
+/**
+ * TALENTRY — Recruiter Candidate Analysis
+ * ----------------------------------------
+ * Wrapper around the shared analysis core.
+ * Produces the SAME NormalizedAnalysis schema as the Job Seeker flow,
+ * then additionally derives recruiter-specific convenience fields
+ * (hiring_decision, scoring_table, html report) on top of it.
+ *
+ * Core analysis logic lives in: ../_shared/analysis-core.ts
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  callAnalysisAI,
+  asString,
+  clampScore,
+  NormalizedAnalysis,
+} from "../_shared/analysis-core.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,259 +23,256 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
 };
 
-const toolSchema = {
-  type: "function" as const,
-  function: {
-    name: "submit_recruiter_report",
-    description: "Return a strict recruiter-focused candidate evaluation report for hiring decisions.",
-    parameters: {
-      type: "object",
-      properties: {
-        executive_hiring_summary: {
-          type: "object",
-          properties: {
-            candidate_level: { type: "string", description: "Junior / Mid / Senior / Lead" },
-            best_fit_roles: { type: "array", items: { type: "string" }, description: "Specific role recommendations" },
-            overall_fit_score: { type: "integer", description: "Overall fit score 0-100" },
-            hiring_decision: { type: "string", enum: ["Strong Hire", "Consider", "Reject"] },
-            summary: { type: "string", description: "2-3 line hiring summary" },
-          },
-          required: ["candidate_level", "best_fit_roles", "overall_fit_score", "hiring_decision", "summary"],
-        },
-        scoring_table: {
-          type: "object",
-          properties: {
-            ats_compatibility: { type: "integer" },
-            role_match: { type: "integer" },
-            experience_depth: { type: "integer" },
-            skill_relevance: { type: "integer" },
-            career_progression: { type: "integer" },
-          },
-          required: ["ats_compatibility", "role_match", "experience_depth", "skill_relevance", "career_progression"],
-        },
-        strengths: { type: "array", items: { type: "string" }, description: "Max 5 specific strengths" },
-        risks: { type: "array", items: { type: "string" }, description: "Max 5 direct risk flags" },
-        missing_requirements: {
-          type: "array",
-          items: { type: "string" },
-          description: "Role-critical missing requirements",
-        },
-        hiring_recommendation: {
-          type: "object",
-          properties: {
-            decision: { type: "string", enum: ["Strong Hire", "Consider", "Reject"] },
-            reasoning: { type: "string", description: "2-3 line reasoning" },
-          },
-          required: ["decision", "reasoning"],
-        },
-        interview_focus_areas: {
-          type: "array",
-          items: { type: "string" },
-          description: "What the recruiter should validate in interview",
-        },
-        why_this_candidate: { type: "string", description: "Short explanation of why candidate is worth considering" },
-        why_not_this_candidate: {
-          type: "string",
-          description: "Short explanation of why candidate should be rejected or questioned",
-        },
-      },
-      required: [
-        "executive_hiring_summary",
-        "scoring_table",
-        "strengths",
-        "risks",
-        "missing_requirements",
-        "hiring_recommendation",
-        "interview_focus_areas",
-        "why_this_candidate",
-        "why_not_this_candidate",
-      ],
-    },
-  },
-};
-
-function deriveScore(report: any) {
-  const candidates = [
-    report?.executive_hiring_summary?.overall_fit_score,
-    report?.scoring_table?.role_match,
-    report?.score,
-    report?.scoring_table?.ats_compatibility,
-  ];
-
-  for (const value of candidates) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return Math.max(0, Math.min(100, Math.round(parsed)));
-  }
-
-  return null;
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
-function esc(value: unknown) {
+// ── Recruiter-specific derivations ────────────────────────────────────────────
+
+/** Derive overall fit score from the unified analysis */
+function deriveOverallScore(analysis: NormalizedAnalysis): number {
+  return analysis.ats_score;
+}
+
+/** Map ats_score to a hiring decision string */
+function deriveHiringDecision(score: number): "Strong Hire" | "Consider" | "Reject" {
+  if (score >= 75) return "Strong Hire";
+  if (score >= 50) return "Consider";
+  return "Reject";
+}
+
+/** Build recruiter-specific scoring_table from section_scores */
+function buildScoringTable(analysis: NormalizedAnalysis) {
+  const s = analysis.section_scores;
+  return {
+    ats_compatibility: s.keyword_optimization,
+    role_match: clampScore(
+      Math.round((s.skills_relevance + s.keyword_optimization) / 2)
+    ),
+    experience_depth: s.experience_quality,
+    skill_relevance: s.skills_relevance,
+    career_progression: s.career_progression,
+  };
+}
+
+function esc(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
-function toArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
-  if (typeof value === "string" && value.trim()) return [value.trim()];
-  return [];
-}
-
-function buildHtml(report: any, candidateName?: string, candidateTitle?: string) {
-  const executive = report?.executive_hiring_summary || {};
-  const scoring = report?.scoring_table || {};
-  const recommendation = report?.hiring_recommendation || {};
-  const strengths = toArray(report?.strengths || report?.top_strengths);
-  const risks = toArray(report?.risks || report?.red_flags || report?.concerns);
-  const missing = toArray(report?.missing_requirements || report?.missing_info);
-  const focus = toArray(report?.interview_focus_areas || report?.interview_focus);
-  const score = deriveScore(report);
+/** Build HTML report from the unified analysis for the recruiter dashboard */
+function buildHtml(
+  analysis: NormalizedAnalysis,
+  candidateName?: string,
+  candidateTitle?: string
+): string {
+  const score = deriveOverallScore(analysis);
+  const decision = deriveHiringDecision(score);
+  const scoringTable = buildScoringTable(analysis);
+  const ex = analysis.executive_summary;
+  const rec = analysis.recruiter_analysis;
 
   const renderList = (items: string[]) =>
-    items.length ? `<ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : `<p>No items</p>`;
+    items.length
+      ? `<ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`
+      : `<p>No items</p>`;
+
+  const scoreRows = Object.entries(scoringTable)
+    .map(
+      ([key, val]) =>
+        `<tr><th>${esc(key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()))}</th><td>${esc(val)}</td></tr>`
+    )
+    .join("");
+
+  const recruiterRows = Object.entries(rec)
+    .map(
+      ([key, val]: [string, any]) =>
+        `<tr><th>${esc(key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()))}</th>` +
+        `<td>${esc(val.score)}/100</td><td>${esc(val.comment)}</td></tr>`
+    )
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Candidate AI Analysis</title>
-  <style>body{font-family:Segoe UI,Tahoma,Arial,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:24px}.wrap{max-width:960px;margin:0 auto}.hero,.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px}.hero h1{margin:0 0 6px;font-size:28px}.muted{color:#64748b}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.score{font-size:36px;font-weight:700}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #e2e8f0;padding:10px 8px;font-size:14px}h2{font-size:18px;margin:0 0 12px}ul{margin:0;padding-left:20px}li{margin:8px 0}</style>
+  <title>Recruiter Candidate Analysis</title>
+  <style>
+    body{font-family:Segoe UI,Tahoma,Arial,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:24px}
+    .wrap{max-width:960px;margin:0 auto}
+    .hero,.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px}
+    .hero h1{margin:0 0 6px;font-size:28px}
+    .muted{color:#64748b}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+    .score{font-size:36px;font-weight:700}
+    table{width:100%;border-collapse:collapse}
+    th,td{text-align:left;border-bottom:1px solid #e2e8f0;padding:10px 8px;font-size:14px}
+    h2{font-size:18px;margin:0 0 12px}
+    ul{margin:0;padding-left:20px}
+    li{margin:8px 0}
+    .badge-hire{color:#16a34a;font-weight:600}
+    .badge-consider{color:#d97706;font-weight:600}
+    .badge-reject{color:#dc2626;font-weight:600}
+  </style>
 </head>
 <body>
 <div class="wrap">
-<section class="hero">
-<h1>${esc(candidateName || "Candidate")}</h1>
-<p class="muted">${esc(candidateTitle || "—")}</p>
-<div class="grid" style="margin-top:16px;">
-<div><div class="muted">Latest Score</div><div class="score">${score ?? "—"}</div></div>
-<div><div class="muted">Candidate Level</div><div>${esc(executive?.candidate_level || "—")}</div></div>
-<div><div class="muted">Decision</div><div>${esc(recommendation?.decision || executive?.hiring_decision || report?.recommendation || "—")}</div></div>
-</div></section>
-<section class="card"><h2>Executive Summary</h2><p>${esc(executive?.summary || report?.executive_summary || "—")}</p></section>
-<section class="card"><h2>Scoring Table</h2><table><tbody>
-<tr><th>ATS Compatibility</th><td>${esc(scoring?.ats_compatibility ?? "—")}</td></tr>
-<tr><th>Role Match</th><td>${esc(scoring?.role_match ?? "—")}</td></tr>
-<tr><th>Experience Depth</th><td>${esc(scoring?.experience_depth ?? "—")}</td></tr>
-<tr><th>Skill Relevance</th><td>${esc(scoring?.skill_relevance ?? "—")}</td></tr>
-<tr><th>Career Progression</th><td>${esc(scoring?.career_progression ?? "—")}</td></tr>
-</tbody></table></section>
-<section class="grid">
-<div class="card"><h2>Strengths</h2>${renderList(strengths)}</div>
-<div class="card"><h2>Risks</h2>${renderList(risks)}</div>
-<div class="card"><h2>Missing Requirements</h2>${renderList(missing)}</div>
-<div class="card"><h2>Interview Focus Areas</h2>${renderList(focus)}</div>
-</section></div></body></html>`;
+  <section class="hero">
+    <h1>${esc(candidateName || analysis.candidate_name || "Candidate")}</h1>
+    <p class="muted">${esc(candidateTitle || analysis.target_role || "—")}</p>
+    <div class="grid" style="margin-top:16px;">
+      <div><div class="muted">ATS Score</div><div class="score">${score}</div></div>
+      <div><div class="muted">Candidate Level</div><div>${esc(ex.candidate_level)}</div></div>
+      <div><div class="muted">Decision</div>
+        <div class="badge-${decision === "Strong Hire" ? "hire" : decision === "Consider" ? "consider" : "reject"}">${esc(decision)}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Executive Summary</h2>
+    <p>${esc(ex.summary_paragraphs)}</p>
+  </section>
+
+  <section class="card">
+    <h2>Scoring Table</h2>
+    <table><tbody>${scoreRows}</tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>Recruiter Analysis</h2>
+    <table>
+      <thead><tr><th>Dimension</th><th>Score</th><th>Comment</th></tr></thead>
+      <tbody>${recruiterRows}</tbody>
+    </table>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h2>Strengths</h2>${renderList(ex.top_strengths)}</div>
+    <div class="card"><h2>Risks</h2>${renderList(ex.main_risks)}</div>
+    <div class="card"><h2>Best Fit Roles</h2>${renderList(ex.best_fit_roles)}</div>
+    <div class="card"><h2>Interview Focus Areas</h2>${renderList(
+      analysis.interview_questions.slice(0, 5).map((q) => q.question)
+    )}</div>
+  </section>
+
+  <section class="card">
+    <h2>Recommended Improvements</h2>
+    ${renderList(
+      analysis.quick_improvements
+        .filter((i) => i.priority === "high")
+        .map((i) => i.description)
+    )}
+  </section>
+</div>
+</body>
+</html>`;
 }
 
+// ── Serve ─────────────────────────────────────────────────────────────────────
+
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
-    const { candidateText, candidateName, candidateTitle, language } = await req.json();
-    if (!candidateText) {
-      return new Response(JSON.stringify({ error: "Missing candidateText" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let payload: any;
+    try {
+      payload = await req.json();
+    } catch {
+      return jsonResponse({ error: "Invalid JSON body" }, 400);
+    }
+
+    const candidateText = asString(payload?.candidateText);
+    const candidateName = asString(payload?.candidateName);
+    const candidateTitle = asString(payload?.candidateTitle);
+    const language = payload?.language === "ar" ? "ar" : "en";
+
+    if (!candidateText || candidateText.length < 30) {
+      return jsonResponse({ error: "Missing or too-short candidateText" }, 400);
     }
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
 
-    const lang = language === "ar" ? "Arabic" : "English";
-    const systemPrompt = `You are a Senior Recruitment Manager, ATS Specialist, and enterprise hiring evaluator with 15+ years of experience in Saudi Arabia and GCC hiring markets.
-
-Respond in ${lang}.
-
-STRICT RULES:
-- Think like a recruiter making a decision in under 2 minutes.
-- Evaluate ONLY evidence present in the CV.
-- DO NOT fabricate missing details.
-- DO NOT give generic career advice.
-- DO NOT repeat the same point in different wording.
-- Keep insights recruiter-focused, direct, and action-oriented.
-- Risks must be honest and critical when needed.
-- Best fit roles must be specific, not broad.
-- Missing requirements must be role-relevant.
-- Interview focus areas must tell the recruiter what to validate.
-- Use Saudi/GCC recruiter logic: stability, clarity, progression, role alignment, ATS readability, and business relevance.`;
-
-    const userPrompt = `Analyze this candidate for a recruiter dashboard.
-
-Candidate Name: ${candidateName || "Unknown"}
-Current Title: ${candidateTitle || "Unknown"}
-
-CV Content:
-${String(candidateText).substring(0, 12000)}
-
-Return a structured report with:
-1) Executive Hiring Summary
-2) Scoring Table (0-100)
-3) Strengths (max 5)
-4) Risks / Red Flags (max 5)
-5) Missing Requirements
-6) Hiring Recommendation with reasoning
-7) Interview Focus Areas
-8) Why this candidate?
-9) Why NOT this candidate?
-
-Make every point decision-supportive and recruiter-usable.`;
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        tools: [toolSchema],
-        tool_choice: { type: "function", function: { name: "submit_recruiter_report" } },
-      }),
-    });
-
-    if (!response.ok) {
-      const status = response.status;
-      if (status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limited, please try again later" }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+    // ── Run the SAME shared core analysis ────────────────────────────────────
+    let result: Awaited<ReturnType<typeof callAnalysisAI>>;
+    try {
+      result = await callAnalysisAI({
+        resumeText: candidateText,
+        language,
+        openAIApiKey: OPENAI_API_KEY,
+      });
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        return jsonResponse({ error: "AI analysis timed out" }, 504);
       }
-      if (status === 402) {
-        return new Response(JSON.stringify({ error: "Credits exhausted" }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      if (err?.status === 429) {
+        return jsonResponse({ error: "Rate limited, please try again later" }, 429);
       }
-      throw new Error(`AI gateway error: ${status}`);
+      if (err?.status === 402) {
+        return jsonResponse({ error: "Credits exhausted" }, 402);
+      }
+      throw err;
     }
 
-    const result = await response.json();
-    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) throw new Error("No tool call in response");
+    const { analysis } = result;
+    const score = deriveOverallScore(analysis);
+    const decision = deriveHiringDecision(score);
+    const scoringTable = buildScoringTable(analysis);
+    const html = buildHtml(analysis, candidateName, candidateTitle);
 
-    const report = JSON.parse(toolCall.function.arguments);
+    // ── Return: unified analysis + recruiter convenience layer ────────────────
+    return jsonResponse(
+      {
+        // ── Unified schema (identical to Job Seeker flow) ──
+        ...analysis,
 
-    const html = buildHtml(report, candidateName, candidateTitle);
-    const score = deriveScore(report);
+        // ── Recruiter-specific convenience fields ──────────
+        score,
+        hiring_decision: decision,
+        scoring_table: scoringTable,
+        executive_hiring_summary: {
+          candidate_level: analysis.executive_summary.candidate_level,
+          best_fit_roles: analysis.executive_summary.best_fit_roles,
+          overall_fit_score: score,
+          hiring_decision: decision,
+          summary: analysis.executive_summary.summary_paragraphs,
+        },
+        strengths: analysis.executive_summary.top_strengths,
+        risks: analysis.executive_summary.main_risks,
+        missing_requirements: analysis.career_recommendations.skills_to_improve.slice(0, 5),
+        hiring_recommendation: {
+          decision,
+          reasoning: analysis.executive_summary.summary_paragraphs.split("\n")[0] || "",
+        },
+        interview_focus_areas: analysis.interview_questions
+          .slice(0, 5)
+          .map((q) => q.question),
+        why_this_candidate: analysis.executive_summary.top_strengths.join(" | "),
+        why_not_this_candidate: analysis.executive_summary.main_risks.join(" | "),
 
-    return new Response(JSON.stringify({ report, html, score, version: "recruiter-analysis-v1" }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+        // ── HTML report for dashboard embedding ────────────
+        html,
+
+        version: "recruiter-analysis-v2-unified",
+      },
+      200
+    );
   } catch (e) {
     console.error("recruiter-analyze-candidate error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse(
+      { error: e instanceof Error ? e.message : "Unknown error" },
+      500
+    );
   }
 });
-
-

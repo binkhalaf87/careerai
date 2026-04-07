@@ -71,6 +71,8 @@ interface Candidate {
   latest_analysis_json?: any;
   latest_analysis_score?: number | null;
   latest_analysis_at?: string | null;
+  latest_analysis_version?: string | null;
+  latest_model_name?: string | null;
   created_at: string;
   file_path?: string | null;
   best_job_title?: string | null;
@@ -227,7 +229,7 @@ const RecruiterCandidates = () => {
     let query = supabase
       .from("recruiter_candidates")
       .select(
-        "id, name, email, current_title, experience_years, stage, fit_score, fit_label, ai_report, latest_analysis_json, latest_analysis_score, latest_analysis_at, created_at, file_path",
+        "id, name, email, current_title, experience_years, stage, fit_score, fit_label, ai_report, latest_analysis_json, latest_analysis_score, latest_analysis_at, latest_analysis_version, latest_model_name, created_at, file_path",
       )
       .eq("recruiter_id", user.id)
       .order("created_at", { ascending: false });
@@ -652,6 +654,39 @@ const RecruiterCandidates = () => {
                             {ar ? "بانتظار إتمام المطابقة مع الوظائف" : "Awaiting job matching"}
                           </p>
                         )}
+                        {/* Analysis freshness pill */}
+                        {(() => {
+                          if (!c.latest_analysis_at && !c.latest_analysis_score) return null;
+                          const ageDays = c.latest_analysis_at
+                            ? Math.floor((Date.now() - new Date(c.latest_analysis_at).getTime()) / 86_400_000)
+                            : null;
+                          const isStale = ageDays != null && ageDays > 30;
+                          const isLegacy = !c.latest_analysis_version;
+                          const pillCls = isStale || isLegacy
+                            ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
+                            : "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400";
+                          return (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {c.latest_analysis_score != null && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted border border-border">
+                                  ATS {c.latest_analysis_score}
+                                </span>
+                              )}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border ${pillCls}`}>
+                                {isLegacy
+                                  ? (ar ? "تحليل قديم" : "legacy")
+                                  : isStale
+                                  ? (ar ? `قديم ${ageDays}ي` : `${ageDays}d old`)
+                                  : (ar ? `حديث ${ageDays}ي` : `${ageDays}d ago`)}
+                              </span>
+                              {c.latest_model_name && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted border border-border text-muted-foreground">
+                                  {c.latest_model_name}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
