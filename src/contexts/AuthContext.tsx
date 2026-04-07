@@ -74,12 +74,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (error) {
           console.error("[Auth] getSession error:", error.message);
+          // Clear stale/invalid session from storage
+          clearSupabaseStorage();
+          await supabase.auth.signOut().catch(() => {});
           void applySession(null);
         } else {
           await applySession(data.session ?? null);
         }
       } catch (error) {
         console.error("[Auth] bootstrap failed:", error);
+        clearSupabaseStorage();
         void applySession(null);
       } finally {
         if (!unsubscribed && mountedRef.current) {
@@ -91,8 +95,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, nextSession) => {
       if (!mountedRef.current) return;
+
+      // When token refresh fails (stale/invalid JWT), clear everything
+      if (event === "TOKEN_REFRESHED" && !nextSession) {
+        clearSupabaseStorage();
+        void applySession(null);
+        setInitialized(true);
+        setLoading(false);
+        return;
+      }
+
+      // On explicit sign-out, ensure storage is cleared
+      if (event === "SIGNED_OUT") {
+        clearSupabaseStorage();
+        void applySession(null);
+        setInitialized(true);
+        setLoading(false);
+        return;
+      }
+
       void applySession(nextSession ?? null);
       setInitialized(true);
       setLoading(false);

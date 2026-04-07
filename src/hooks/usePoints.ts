@@ -26,7 +26,7 @@ export function usePoints() {
     try {
       const [pointsRes, profileRes] = await Promise.all([
         supabase.from("point_transactions").select("amount").eq("user_id", user.id),
-        supabase.from("profiles").select("free_analysis_used, cv_upload_count").eq("user_id", user.id).maybeSingle(),
+        supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
       ]);
 
       const balance = (pointsRes.data || []).reduce((sum, tx) => sum + tx.amount, 0);
