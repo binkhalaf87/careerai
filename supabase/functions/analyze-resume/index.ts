@@ -461,6 +461,18 @@ function normalizeAnalysis(raw: any, language: string) {
           }))
           .filter((item: any) => item.description || item.action_step)
       : [],
+    strengths: asStringArray(raw?.strengths || raw?.executive_summary?.top_strengths).slice(0, 6),
+    weaknesses: asStringArray(raw?.weaknesses || raw?.executive_summary?.main_risks).slice(0, 6),
+    missing_keywords: asStringArray(raw?.missing_keywords || raw?.career_recommendations?.skills_to_improve).slice(0, 12),
+    improvements: Array.isArray(raw?.improvements)
+      ? raw.improvements
+          .map((item: any) => ({
+            title: asString(item?.title || item?.description),
+            action: asString(item?.action || item?.action_step || item?.description),
+            priority: ["high", "medium", "low"].includes(item?.priority) ? item.priority : "medium",
+          }))
+          .filter((item: any) => item.title || item.action)
+      : [],
     interview_questions: Array.isArray(raw?.interview_questions)
       ? raw.interview_questions
           .map((item: any) => ({
@@ -505,59 +517,100 @@ function tryExtractJsonFromText(content: string) {
 function buildPrompt(resumeText: string, language: string) {
   const langInstruction =
     language === "ar"
-      ? "أجب باللغة العربية فقط لكل الأقسام ما عدا قسم إعادة كتابة السيرة الذاتية (resume_rewrite) فيجب أن يكون بالإنجليزية فقط."
-      : "Respond in English for all sections. The resume_rewrite must always be in English.";
+      ? "أجب باللغة العربية الفصحى الواضحة لجميع الأقسام باستثناء resume_rewrite الذي يجب أن يكون بالإنجليزية المهنية حصراً."
+      : "Respond in English for all sections. The resume_rewrite must always be in professional English only.";
 
   const today = new Date().toISOString().split("T")[0];
 
-  const systemPrompt = `You are an elite Recruitment Manager and ATS specialist with 15+ years of experience in the global job market. ${langInstruction}
+  const systemPrompt = `You are a Senior Recruitment Director and Certified ATS Specialist with 20+ years of experience across the Saudi Arabian, Gulf (GCC), and global job markets. You have deep expertise in:
+- Saudi Vision 2030 sector priorities (NEOM, tourism, tech, healthcare, finance)
+- Gulf employment norms: GOSI, Iqama, Nitaqat, nationalization (Saudization/Emiratization)
+- ATS systems used by top regional employers (SAP SuccessFactors, Oracle HCM, Taleo, Workday)
+- Competitive salary benchmarks in SAR for the Saudi/GCC market
 
-TODAY'S DATE: ${today}. Use this as reference for all date calculations (experience duration, career gaps, graduation recency, etc.).
+${langInstruction}
 
-CRITICAL RULES:
-- Never invent candidate information. If something is missing, write "[Required]" or "[Please confirm]".
-- If you find date conflicts or career gaps, mention them as a brief note + suggest professional wording (without inventing reasons).
-- All scores must be 0-100.
-- All salary figures in SAR (monthly).
-- Be specific and actionable — avoid generalities.
-- Never mention "keyword map" or any equivalent.
-- Never add a section about "recommended sectors/companies" or any similar heading.
-- The resume_rewrite.full_resume must ALWAYS be in English only, using action verbs, STAR format, quantified achievements, and ATS-friendly keywords.
-- For interview_questions, provide 8-12 questions with 3-5 line answer directions each.
-- For quick_improvements, provide 10-15 items in imperative form ("Do X").
-- When calculating years of experience, use today's date (${today}) as the end date.`;
+TODAY'S DATE: ${today}. Use this as the reference for all date calculations.
 
-  const userPrompt = `Perform a comprehensive ATS career intelligence analysis on this resume for the global job market.
+ABSOLUTE RULES:
+1. NEVER invent or fabricate candidate information. If data is missing, write "[يرجى التأكيد]" (AR) or "[Please confirm]" (EN).
+2. ALL scores must be integers between 0-100. Be precise, not generous — a score of 70+ means genuinely competitive.
+3. ALL salary figures in SAR (monthly), calibrated for the Saudi/GCC market specifically.
+4. Be brutally honest, specific, and actionable — generic advice is useless.
+5. The resume_rewrite.full_resume MUST be in English only, using strong action verbs, STAR format, quantified achievements, and industry-standard ATS keywords.
+6. For interview_questions, provide exactly 10 questions tailored to the target role and Saudi/GCC hiring context.
+7. For quick_improvements, provide exactly 12 items in imperative form ("Add X", "Remove Y", "Replace Z with W").
+8. When calculating years of experience, always use ${today} as the end date.
+9. Factor in Saudi-specific elements: whether they mention Iqama/work authorization, language skills (Arabic/English proficiency), Saudi/GCC industry certifications.
+10. ATS score must reflect real-world ATS system performance — be strict.`;
 
-If no target job description is provided, choose a suitable target role based on the candidate's level and specialization in the global job market, and include it as target_role.
+  const userPrompt = `Perform a comprehensive ATS Career Intelligence Analysis for the Saudi/GCC job market on the following resume.
 
-Resume Text:
+If no target role is specified, infer the BEST target role based on the candidate's strongest skills and most recent experience — optimized for the Saudi/GCC market.
+
+═══════════════════ RESUME TEXT ═══════════════════
 ${resumeText}
+═══════════════════════════════════════════════════
 
-Analyze ALL of the following and return via the tool call:
+Analyze and return ALL sections via tool call:
 
-1. TARGET ROLE: Infer the best target role for the global job market.
+① TARGET ROLE
+   - Infer the most competitive role for this candidate in the Saudi/GCC market.
+   - Consider Vision 2030 alignment if applicable.
 
-2. EXECUTIVE SUMMARY (1-3 paragraphs): Quick assessment of candidate level, best-fit roles, top 3 strengths, top 3 hiring risks/gaps.
+② EXECUTIVE SUMMARY
+   - candidate_level: Must be one of ["junior","mid","senior","executive"]
+   - summary_paragraphs: 2-3 paragraphs covering: overall impression, key value proposition, critical gaps. Be honest.
+   - best_fit_roles: 3-5 specific role titles (e.g., "Senior Financial Analyst", not just "Finance")
+   - top_strengths: 3 concrete, specific strengths with evidence from the resume
+   - main_risks: 3 real hiring risks that would make a Saudi/GCC recruiter hesitate
 
-3. ATS SCORE (0-100) with section scores for: resume_formatting, keyword_optimization, experience_quality, career_progression, skills_relevance, education_strength, contact_information_quality.
+③ ATS SCORE (0-100) + SECTION SCORES
+   Score each dimension honestly:
+   - resume_formatting: Layout, length (1-2 pages ideal), font readability, consistent structure
+   - keyword_optimization: Presence of role-specific keywords, industry terms, certifications mentioned
+   - experience_quality: Quantified achievements, STAR format, impact shown (not just duties listed)
+   - career_progression: Upward trajectory, logical flow, no unexplained gaps > 6 months
+   - skills_relevance: Hard skills match to target role, tech stack, certifications
+   - education_strength: Degree relevance, institution prestige, graduation year, continuing education
+   - contact_information_quality: Name, phone, email, LinkedIn, location, Nationality/Iqama status (if relevant)
 
-4. ATS BREAKDOWN for each section (formatting, sections, keywords, experience, education, skills, contact_info): score (0-100), current_state, problem, recommended_improvement.
+④ ATS BREAKDOWN (7 categories: formatting, sections, keywords, experience, education, skills, contact_info)
+   For each: score (0-100) + current_state + problem + recommended_improvement
 
-5. RECRUITER ANALYSIS (score 0-100 for each): first_impression, career_clarity, achievement_strength, role_alignment, professional_presentation — each with score + practical comment.
+⑤ RECRUITER ANALYSIS (Saudi/GCC recruiter perspective)
+   Score 0-100 + practical comment for each:
+   - first_impression: What a recruiter thinks in the first 6 seconds
+   - career_clarity: Is the career direction obvious and consistent?
+   - achievement_strength: Do achievements stand out vs. just listing duties?
+   - role_alignment: Does this resume feel tailored or generic?
+   - professional_presentation: Grammar, formatting, professionalism level
 
-6. CAREER RECOMMENDATIONS for the global job market: top 3-5 roles with why_it_fits, skills_to_improve, 30/60/90 day plan (concise & practical), certifications recommended, LinkedIn/portfolio improvements if needed. Do NOT include recommended sectors/companies.
+⑥ CAREER RECOMMENDATIONS (Saudi/GCC market focus)
+   - top_roles: 3-5 roles with specific why_it_fits reasoning
+   - skills_to_improve: 5-8 specific skills/technologies, not generic ("Learn Python" not "improve tech skills")
+   - thirty_sixty_ninety_day_plan: Concrete, actionable milestones for job search
+   - certifications_recommended: 3-5 specific certs with names (e.g., "PMP", "CFA Level 1", "AWS SAA", "CIPA")
+   - linkedin_improvements: 3-5 specific LinkedIn profile improvements
 
-7. SALARY ESTIMATION (SAR monthly):
-   - salary_table: For the target role + 2-3 related roles, provide: role, monthly_range_low, monthly_range_high, when_upper_range (when does candidate get the high end), notes (city/sector/allowances).
-   - Candidate-specific: offer_range_low, offer_range_high, negotiation_target, anchor (opening number), walk_away (minimum acceptance).
-   - Note these are general market estimates.
+⑦ SALARY ESTIMATION (SAR monthly, Saudi market)
+   - salary_table: Target role + 2-3 related roles. Include: role, monthly_range_low, monthly_range_high, when_upper_range, notes (sector/city adjustments)
+   - offer_range_low, offer_range_high: Realistic range for THIS candidate
+   - negotiation_target: What to ask for
+   - anchor: Opening ask number
+   - walk_away: Minimum acceptable
 
-8. RESUME REWRITE (English only): Complete ATS-friendly resume rewrite in markdown format. Sections: Header, Professional Summary, Key Skills, Experience (STAR format with numbers), Education, Certifications, Projects (if any), Languages. Never invent info.
+⑧ RESUME REWRITE (English ONLY — full ATS-optimized version)
+   Rewrite with: Strong header, Professional Summary (3-4 lines), Key Skills (technical + soft), Work Experience (STAR + numbers), Education, Certifications, Languages.
+   Do NOT invent any information. Use "[Please confirm]" for unknowns.
 
-9. QUICK IMPROVEMENTS: 10-15 items ordered by priority (high/medium/low), imperative form, specific and actionable.
+⑨ QUICK IMPROVEMENTS (exactly 12 items, ordered high→medium→low priority)
+   Each must be: specific, imperative, and immediately actionable.
+   Examples: "Add LinkedIn URL to header", "Replace 'Responsible for' with 'Managed/Led/Optimized'", "Quantify the 2022 project outcome with % or SAR figure"
 
-10. INTERVIEW QUESTIONS: 8-12 questions related to the target role, each with a 3-5 line suggested answer direction.`;
+⑩ INTERVIEW QUESTIONS (exactly 10 questions for the target role in Saudi/GCC context)
+   Mix behavioral, technical, and situational questions.
+   Each suggested_answer_direction must be 4-6 lines with specific guidance.`;
 
   return { systemPrompt, userPrompt };
 }
@@ -620,7 +673,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -676,6 +729,23 @@ serve(async (req) => {
     }
 
     const analysis = normalizeAnalysis(parsedAnalysis, language);
+
+    if (!analysis.strengths.length) {
+      analysis.strengths = analysis.executive_summary.top_strengths.slice(0, 6);
+    }
+    if (!analysis.weaknesses.length) {
+      analysis.weaknesses = analysis.executive_summary.main_risks.slice(0, 6);
+    }
+    if (!analysis.missing_keywords.length) {
+      analysis.missing_keywords = analysis.career_recommendations.skills_to_improve.slice(0, 12);
+    }
+    if (!analysis.improvements.length) {
+      analysis.improvements = analysis.quick_improvements.slice(0, 8).map((item: any) => ({
+        title: item.description,
+        action: item.action_step,
+        priority: item.priority,
+      }));
+    }
 
     return jsonResponse(analysis, 200);
   } catch (error) {

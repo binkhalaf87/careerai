@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { normalizeResume } from "@/lib/resume-normalizer";
+import { normalizeResume, normalizeResumeForAnalysis } from "@/lib/resume-normalizer";
 
 export interface UserResumeData {
   id: string;
@@ -308,12 +308,23 @@ export async function uploadAndParseResume(
   const rawText = String(extractData?.text || "");
   const structured = normalizeStructured(extractData?.structured) || {};
   const normalized = normalizeResume(rawText);
+  const normalizedAnalysis = normalizeResumeForAnalysis(rawText);
 
   const mergedStructured: Record<string, string> = {
     ...structured,
     name: normalized.name || structured.name || structured.full_name || "",
     full_name: normalized.name || structured.full_name || structured.name || "",
-    job_title: normalized.jobTitle || structured.job_title || "",
+    job_title: normalized.jobTitle || structured.job_title || normalizedAnalysis.job_title || "",
+    summary: normalizedAnalysis.summary || structured.summary || structured.professional_summary || "",
+    experience: normalizedAnalysis.experience.join("
+") || structured.experience || structured.work_experience || "",
+    skills: normalizedAnalysis.skills.join("
+") || structured.skills || "",
+    education: normalizedAnalysis.education.join("
+") || structured.education || "",
+    certifications: normalizedAnalysis.certifications.join("
+") || structured.certifications || "",
+    raw_text: normalizedAnalysis.raw_text || rawText,
     email: normalized.email || structured.email || "",
     phone: normalized.phone || structured.phone || "",
     linkedin: normalized.linkedin || structured.linkedin || "",

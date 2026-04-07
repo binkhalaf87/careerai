@@ -69,6 +69,21 @@ interface FullAnalysis {
   candidate_name: string;
   ats_score: number;
   section_scores: Record<string, number>;
+  strengths?: string[];
+  weaknesses?: string[];
+  missing_keywords?: string[];
+  issues?: { type: "critical" | "warning"; message: string }[];
+  improvements?: { title: string; action: string; priority: "high" | "medium" | "low" }[];
+  normalized_resume?: {
+    name: string | null;
+    job_title: string | null;
+    summary: string | null;
+    skills: string[];
+    experience: string[];
+    education: string[];
+    certifications: string[];
+    raw_text: string;
+  };
   executive_summary: {
     candidate_level: string;
     summary_paragraphs: string;
@@ -134,6 +149,12 @@ const EMPTY_ANALYSIS: FullAnalysis = {
   candidate_name: "",
   ats_score: 0,
   section_scores: {},
+  strengths: [],
+  weaknesses: [],
+  missing_keywords: [],
+  issues: [],
+  improvements: [],
+  normalized_resume: undefined,
   executive_summary: {
     candidate_level: "",
     summary_paragraphs: "",
@@ -203,13 +224,13 @@ const candidateLevelFromScore = (score: number, lang: "ar" | "en") => {
 const buildDeterministicAnalysis = (resume: AtsStructuredResume, language: "ar" | "en"): FullAnalysis => {
   const ats = analyzeResumeATS(resume);
   const sectionScores: Record<string, number> = {
-    resume_formatting: ats.breakdown.structure,
+    resume_formatting: ats.breakdown.formatting,
     keyword_optimization: ats.breakdown.keywords,
-    experience_quality: ats.breakdown.impact,
+    experience_quality: ats.breakdown.experience,
     career_progression: ats.breakdown.completeness,
-    skills_relevance: ats.breakdown.keywords,
-    education_strength: ats.breakdown.completeness,
-    contact_information_quality: ats.breakdown.structure,
+    skills_relevance: ats.breakdown.skills,
+    education_strength: ats.breakdown.education,
+    contact_information_quality: ats.breakdown.formatting,
   };
   const mkBreak = (score: number, csAr: string, csEn: string, pAr: string, pEn: string, rAr: string, rEn: string) => ({
     score,
@@ -282,45 +303,55 @@ const buildDeterministicAnalysis = (resume: AtsStructuredResume, language: "ar" 
       "Verify contact details and remove malformed formatting.",
     ),
   };
-  const topStrengths = [
-    ats.breakdown.structure >= 70
-      ? language === "ar"
-        ? "بنية السيرة واضحة وقابلة للقراءة."
-        : "The resume structure is clear and readable."
-      : "",
-    ats.breakdown.keywords >= 60
-      ? language === "ar"
-        ? "توجد كلمات مفتاحية مقبولة مرتبطة بالدور."
-        : "There is acceptable role-relevant keyword coverage."
-      : "",
-    ats.breakdown.impact >= 70
-      ? language === "ar"
-        ? "الخبرة تحتوي على أثر قابل للإبراز."
-        : "Work experience includes impact that can be highlighted."
-      : "",
-  ].filter(Boolean);
-  const mainRisks = ats.issues.map((i) => i.title);
+  const topStrengths = ats.strengths.length
+    ? ats.strengths
+    : [
+        ats.breakdown.structure >= 70
+          ? language === "ar"
+            ? "بنية السيرة واضحة وقابلة للقراءة."
+            : "The resume structure is clear and readable."
+          : "",
+        ats.breakdown.keywords >= 60
+          ? language === "ar"
+            ? "توجد كلمات مفتاحية مقبولة مرتبطة بالدور."
+            : "There is acceptable role-relevant keyword coverage."
+          : "",
+        ats.breakdown.impact >= 70
+          ? language === "ar"
+            ? "الخبرة تحتوي على أثر قابل للإبراز."
+            : "Work experience includes impact that can be highlighted."
+          : "",
+      ].filter(Boolean);
+  const mainRisks = ats.weaknesses.length ? ats.weaknesses : ats.issues.map((i) => i.title);
   return {
     ...EMPTY_ANALYSIS,
     target_role: resume.jobTitle || "",
     candidate_name: resume.fullName || "",
     ats_score: ats.overallScore,
     section_scores: sectionScores,
+    strengths: topStrengths,
+    weaknesses: mainRisks,
+    missing_keywords: ats.missingKeywords,
+    issues: ats.issues.map((issue) => ({
+      type: issue.severity === "high" ? "critical" : "warning",
+      message: issue.title,
+    })),
+    improvements: ats.improvements,
     executive_summary: {
       candidate_level: candidateLevelFromScore(ats.overallScore, language),
       summary_paragraphs:
         language === "ar"
-          ? `تم إنشاء هذا التقييم عبر محرك TALENTRY الداخلي. الدرجة الحالية ${ats.overallScore}/100.`
-          : `This score was generated using the TALENTRY internal ATS engine. Current score: ${ats.overallScore}/100.`,
+          ? `تم إنشاء هذا التقييم عبر محرك TALENTRY الداخلي. الدرجة الحالية ${ats.overallScore}/100، مع احتساب اكتمال الأقسام والمهارات والخبرة والإنجازات والكلمات المفتاحية وقابلية القراءة.`
+          : `This score was generated using the TALENTRY internal ATS engine and weighted across section completeness, skills, experience, achievements, keyword coverage, and readability. Current score: ${ats.overallScore}/100.`,
       best_fit_roles: resume.jobTitle ? [resume.jobTitle] : [],
       top_strengths: topStrengths,
       main_risks: mainRisks,
     },
     ats_breakdown: atsBreakdown,
-    quick_improvements: ats.issues.map((issue) => ({
-      priority: issue.severity,
+    quick_improvements: ats.improvements.map((issue) => ({
+      priority: issue.priority,
       description: issue.title,
-      action_step: issue.suggestion,
+      action_step: issue.action,
     })),
   };
 };
@@ -352,6 +383,11 @@ const mergeWithDeterministicAnalysis = (
         ? existing.executive_summary.main_risks
         : deterministic.executive_summary.main_risks) || [],
   },
+  strengths: deterministic.strengths?.length ? deterministic.strengths : existing?.strengths || [],
+  weaknesses: deterministic.weaknesses?.length ? deterministic.weaknesses : existing?.weaknesses || [],
+  missing_keywords: deterministic.missing_keywords?.length ? deterministic.missing_keywords : existing?.missing_keywords || [],
+  improvements: deterministic.improvements?.length ? deterministic.improvements : existing?.improvements || [],
+  issues: deterministic.issues?.length ? deterministic.issues : existing?.issues || [],
   quick_improvements: deterministic.quick_improvements.length
     ? deterministic.quick_improvements
     : existing?.quick_improvements || [],
@@ -401,7 +437,7 @@ const Analysis = () => {
   const [reportLanguage, setReportLanguage] = useState<"ar" | "en">("ar");
   const [autoAnalyzeFailed, setAutoAnalyzeFailed] = useState(false);
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "corrections" | "enhanced">("overview");
+  const [activeTab, setActiveTab] = useState<string>("overview");
   const [correctionsDraft, setCorrectionsDraft] = useState({ fullName: "", title: "", contact: "", summary: "" });
   const [showInsufficientPoints, setShowInsufficientPoints] = useState(false);
   const { user } = useAuth();
@@ -571,7 +607,13 @@ const Analysis = () => {
         ),
       );
 
-      // Normalize quick_improvements
+      // Normalize career_recommendations
+      const rawCareer = payload.career_recommendations || {};
+
+      // Normalize quick_improvements and ATS detail arrays
+      const rawStrengths = payload.strengths || rawExec.top_strengths || rawExec.strengths || existing.strengths || [];
+      const rawWeaknesses = payload.weaknesses || rawExec.main_risks || rawExec.weaknesses || existing.weaknesses || [];
+      const rawMissingKeywords = payload.missing_keywords || payload.missingKeywords || rawCareer.skills_to_improve || [];
       const rawImprovements = payload.quick_improvements || payload.improvements || payload.priority_fixes || [];
       const quick_improvements: FullAnalysis["quick_improvements"] = Array.isArray(rawImprovements)
         ? rawImprovements
@@ -594,6 +636,11 @@ const Analysis = () => {
               action_step: "",
             }))
             .filter((x) => !isJunk(x.description));
+      const improvements = quick_improvements.map((item) => ({
+        title: item.description,
+        action: item.action_step || item.description,
+        priority: (["high", "medium", "low"].includes(item.priority) ? item.priority : "medium") as "high" | "medium" | "low",
+      }));
 
       // Normalize interview_questions
       const rawQuestions = payload.interview_questions || [];
@@ -638,7 +685,6 @@ const Analysis = () => {
       }
 
       // Normalize career_recommendations
-      const rawCareer = payload.career_recommendations || {};
       const top_roles = Array.isArray(rawCareer.top_roles)
         ? rawCareer.top_roles
             .map((r: unknown) => {
@@ -661,6 +707,10 @@ const Analysis = () => {
         candidate_name: safeText(payload.candidate_name || existing.candidate_name || ""),
         ats_score,
         section_scores: Object.keys(section_scores).length > 0 ? section_scores : EMPTY_ANALYSIS.section_scores,
+        strengths: dedupeList(safeList(rawStrengths)),
+        weaknesses: dedupeList(safeList(rawWeaknesses)),
+        missing_keywords: dedupeList(safeList(rawMissingKeywords)),
+        improvements,
         executive_summary: {
           candidate_level: safeText(rawExec.candidate_level || ""),
           summary_paragraphs: cleanDisplayText(summaryText),
@@ -1029,9 +1079,7 @@ const Analysis = () => {
   };
 
   useEffect(() => {
-    if (requestedTab === "overview" || requestedTab === "corrections" || requestedTab === "enhanced") {
-      setActiveTab(requestedTab);
-    }
+    if (requestedTab) { setActiveTab(requestedTab); }
   }, [requestedTab]);
 
   useEffect(() => {
@@ -1210,6 +1258,23 @@ const Analysis = () => {
     };
   }, [result, language]);
 
+
+  const analysisStrengths = useMemo(
+    () => dedupeList(safeList(result?.strengths || result?.executive_summary?.top_strengths || [])).filter((item) => hasText(item) && !isJunk(item)).slice(0, 6),
+    [result],
+  );
+  const analysisWeaknesses = useMemo(
+    () => dedupeList(safeList(result?.weaknesses || result?.executive_summary?.main_risks || [])).filter((item) => hasText(item) && !isJunk(item)).slice(0, 6),
+    [result],
+  );
+  const analysisMissingKeywords = useMemo(
+    () => dedupeList(safeList(result?.missing_keywords || result?.career_recommendations?.skills_to_improve || [])).filter((item) => hasText(item) && !isJunk(item)).slice(0, 12),
+    [result],
+  );
+  const analysisImprovements = useMemo(
+    () => (result?.improvements || []).filter((item) => hasText(item.title) || hasText(item.action)).slice(0, 8),
+    [result],
+  );
   const hasBreakdown = hasObject(result?.ats_breakdown || null);
   const hasCareer =
     !!result?.career_recommendations &&
@@ -1235,27 +1300,34 @@ const Analysis = () => {
 
   /* ── Score ring helper ── */
   const ScoreRing = ({ score }: { score: number }) => {
-    const r = 36;
+    const r = 44;
     const circ = 2 * Math.PI * r;
     const fill = (score / 100) * circ;
+    const grade = score >= 85 ? "A" : score >= 70 ? "B" : score >= 55 ? "C" : "D";
+    const gradeColor = score >= 85 ? "text-emerald-500" : score >= 70 ? "text-amber-500" : score >= 55 ? "text-orange-500" : "text-red-500";
     return (
-      <div className="relative w-28 h-28 flex-shrink-0">
-        <svg className="w-28 h-28 -rotate-90" viewBox="0 0 88 88">
-          <circle cx="44" cy="44" r={r} fill="none" strokeWidth="6" className="text-muted/30" stroke="currentColor" />
+      <div className="relative w-36 h-36 flex-shrink-0">
+        {/* Outer glow ring */}
+        <div className="absolute inset-0 rounded-full opacity-20 blur-md" style={{ background: scoreRingColor(score) }} />
+        <svg className="w-36 h-36 -rotate-90" viewBox="0 0 104 104">
+          {/* Track */}
+          <circle cx="52" cy="52" r={r} fill="none" strokeWidth="7" stroke="currentColor" className="text-muted/20" />
+          {/* Progress */}
           <circle
-            cx="44"
-            cy="44"
+            cx="52"
+            cy="52"
             r={r}
             fill="none"
-            strokeWidth="6"
+            strokeWidth="7"
             strokeDasharray={`${fill} ${circ}`}
             strokeLinecap="round"
-            style={{ stroke: scoreRingColor(score), transition: "stroke-dasharray 1s ease" }}
+            style={{ stroke: scoreRingColor(score), transition: "stroke-dasharray 1.2s cubic-bezier(0.4,0,0.2,1)", filter: `drop-shadow(0 0 6px ${scoreRingColor(score)}60)` }}
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`text-3xl font-black leading-none ${scoreColor(score)}`}>{score}</span>
-          <span className="text-[10px] text-muted-foreground mt-0.5">/100</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+          <span className={`text-4xl font-black leading-none tabular-nums ${scoreColor(score)}`}>{score}</span>
+          <span className="text-[10px] text-muted-foreground font-medium">/100</span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${gradeColor} bg-current/10`} style={{color: scoreRingColor(score), borderColor: `${scoreRingColor(score)}40`, background: `${scoreRingColor(score)}12`}}>{grade}</span>
         </div>
       </div>
     );
@@ -1307,7 +1379,7 @@ const Analysis = () => {
             </div>
             <p className="text-xs text-muted-foreground">{stageConfig[stage].progress}%</p>
           </div>
-          <div className="space-y-1.5 text-start">
+          <div className="space-y-1 text-start">
             {allStages.slice(0, -1).map((s, i) => {
               const currentIdx = allStages.indexOf(stage);
               const isDone = i < currentIdx;
@@ -1315,16 +1387,21 @@ const Analysis = () => {
               return (
                 <div
                   key={s}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${isCurrent ? "bg-violet-500/10 text-violet-600 dark:text-violet-400" : isDone ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"}`}
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all duration-300 ${isCurrent ? "bg-violet-500/12 text-violet-600 dark:text-violet-400 border border-violet-500/20" : isDone ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40"}`}
                 >
                   {isDone ? (
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <div className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    </div>
                   ) : isCurrent ? (
-                    <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" />
+                    <div className="w-5 h-5 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center flex-shrink-0">
+                      <Loader2 className="w-3 h-3 text-violet-500 animate-spin" />
+                    </div>
                   ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-current flex-shrink-0" />
+                    <div className="w-5 h-5 rounded-full border-2 border-current flex-shrink-0 opacity-30" />
                   )}
-                  <span>{language === "ar" ? stageConfig[s].ar : stageConfig[s].en}</span>
+                  <span className={isCurrent ? "font-semibold" : ""}>{language === "ar" ? stageConfig[s].ar : stageConfig[s].en}</span>
+                  {isDone && <span className="ml-auto text-[10px] text-emerald-500 font-bold">{language === "ar" ? "✓ تم" : "✓ Done"}</span>}
                 </div>
               );
             })}
@@ -1346,9 +1423,7 @@ const Analysis = () => {
         <header className="sticky top-0 z-20 border-b border-border/60 bg-background/90 backdrop-blur-md">
           <div className="container max-w-4xl flex items-center gap-3 h-14">
             <Button variant="ghost" size="icon" asChild className="h-8 w-8 rounded-lg">
-              <Link to="/dashboard">
-                <ArrowLeft className={`w-4 h-4 ${language === "ar" ? "rotate-180" : ""}`} />
-              </Link>
+              <Link to="/dashboard"><ArrowLeft className={`w-4 h-4 ${language === "ar" ? "rotate-180" : ""}`} /></Link>
             </Button>
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center">
@@ -1358,175 +1433,63 @@ const Analysis = () => {
             </div>
           </div>
         </header>
-
         <main className="container max-w-2xl py-12 px-4">
           <div className="text-center space-y-3 mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-violet-500/10 flex items-center justify-center mx-auto">
-              <Brain className="w-8 h-8 text-violet-500" />
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 rounded-2xl bg-violet-500/20 blur-xl" />
+              <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/10 border border-violet-500/20 flex items-center justify-center">
+                <Brain className="w-10 h-10 text-violet-500" />
+              </div>
             </div>
             <h2 className="text-2xl font-extrabold text-foreground">
-              {selectedResume || resumeId
-                ? language === "ar"
-                  ? "جارٍ تجهيز تحليل السيرة الذاتية"
-                  : "Preparing Resume Analysis"
-                : language === "ar"
-                  ? "اختر سيرة ذاتية للتحليل"
-                  : "Select a Resume to Analyze"}
+              {selectedResume || resumeId ? (language === "ar" ? "جارٍ تجهيز تحليل السيرة الذاتية" : "Preparing Resume Analysis") : (language === "ar" ? "اختر سيرة ذاتية للتحليل" : "Select a Resume to Analyze")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {selectedResume || resumeId
-                ? language === "ar"
-                  ? "تم تحديد السيرة الذاتية، وسيتم تشغيل التحليل وعرض النتيجة هنا."
-                  : "A resume is selected. The analysis will run and the report will appear here."
-                : language === "ar"
-                  ? "سيحلل الذكاء الاصطناعي سيرتك ويقدم تقريراً شاملاً"
-                  : "AI will analyze your resume and provide a detailed report"}
+              {selectedResume || resumeId ? (language === "ar" ? "سيتم تشغيل التحليل وعرض النتيجة هنا." : "The analysis will run and the report will appear here.") : (language === "ar" ? "سيحلل الذكاء الاصطناعي سيرتك ويقدم تقريراً شاملاً" : "AI will analyze your resume and provide a detailed report")}
             </p>
           </div>
-
-          {/* Language selector */}
           <div className="flex items-center justify-center gap-3 p-3.5 rounded-xl border border-border bg-card mb-6">
-            <span className="text-sm font-medium text-muted-foreground">
-              {language === "ar" ? "لغة التقرير:" : "Report Language:"}
-            </span>
+            <span className="text-sm font-medium text-muted-foreground">{language === "ar" ? "لغة التقرير:" : "Report Language:"}</span>
             <div className="flex gap-1 bg-muted p-1 rounded-lg">
               {(["ar", "en"] as const).map((lang) => (
-                <button
-                  key={lang}
-                  onClick={() => setReportLanguage(lang)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${reportLanguage === lang ? "bg-violet-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                >
+                <button key={lang} onClick={() => setReportLanguage(lang)} className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${reportLanguage === lang ? "bg-violet-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                   {lang === "ar" ? "العربية" : "English"}
                 </button>
               ))}
             </div>
           </div>
-
           {loadingResumes || loadingStoredAnalysis ? (
-            <div className="flex justify-center py-12">
-              <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
-                <p className="text-sm text-muted-foreground">
-                  {language === "ar" ? "جارٍ تحميل البيانات..." : "Loading data..."}
-                </p>
-              </div>
-            </div>
-          ) : selectedResume || (resumeId && userResumes.length > 0) ? (
-            <div className="space-y-4">
-              <div className="rounded-2xl border-2 border-violet-500/30 bg-violet-500/5 p-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-11 h-11 rounded-xl bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-5 h-5 text-violet-500" />
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <p className="text-sm font-semibold text-foreground truncate">
-                      {selectedResume?.file_name || (language === "ar" ? "السيرة المحددة" : "Selected Resume")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {autoAnalyzeFailed
-                        ? language === "ar"
-                          ? "تعذّر إكمال التحليل تلقائياً. يمكنك إعادة المحاولة الآن."
-                          : "Automatic analysis did not complete. You can retry now."
-                        : language === "ar"
-                          ? "تم تحديد هذه السيرة للتحليل."
-                          : "This resume is selected for analysis."}
-                    </p>
-                  </div>
-                  {(analyzing || (!autoAnalyzeFailed && resumeId)) && (
-                    <div className="flex items-center gap-2 text-violet-600 dark:text-violet-400 text-sm font-medium">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>{language === "ar" ? "جارٍ التحليل..." : "Analyzing..."}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {storedAnalysisError ? (
-                <div className="flex flex-col items-center gap-3 py-4 rounded-2xl border border-red-500/20 bg-red-500/5 text-center">
-                  <AlertTriangle className="w-8 h-8 text-red-500" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">
-                      {language === "ar" ? "تعذر تحميل التحليل المحفوظ" : "Could not load saved analysis"}
-                    </p>
-                    <p className="text-xs text-muted-foreground max-w-md px-4">{storedAnalysisError}</p>
-                  </div>
-                </div>
-              ) : null}
-
-              {autoAnalyzeFailed && (
-                <div className="flex flex-col items-center gap-3 py-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 text-center">
-                  <AlertTriangle className="w-8 h-8 text-amber-500" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">
-                      {language === "ar"
-                        ? "تعذّر عرض نتيجة التحليل تلقائياً"
-                        : "Could not display the analysis automatically"}
-                    </p>
-                    <p className="text-xs text-muted-foreground max-w-md px-4">
-                      {language === "ar"
-                        ? "السيرة محددة بالفعل. أعد المحاولة لتشغيل التحليل على السيرة المختارة."
-                        : "The resume is already selected. Retry to run the analysis for the selected resume."}
-                    </p>
-                  </div>
-                  <Button
-                    onClick={handleRetrySelectedResume}
-                    className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-2"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {language === "ar" ? "إعادة المحاولة" : "Retry Analysis"}
-                  </Button>
-                </div>
-              )}
-            </div>
+            <div className="flex justify-center py-12"><div className="flex flex-col items-center gap-3"><Loader2 className="w-8 h-8 animate-spin text-violet-500" /><p className="text-sm text-muted-foreground">{language === "ar" ? "جارٍ تحميل البيانات..." : "Loading data..."}</p></div></div>
           ) : userResumes.length === 0 ? (
             <div className="text-center py-12 space-y-4">
-              <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center mx-auto">
-                <Upload className="w-6 h-6 text-muted-foreground/50" />
-              </div>
-              <p className="text-muted-foreground text-sm">
-                {language === "ar" ? "لا توجد سير ذاتية مرفوعة بعد." : "No resumes uploaded yet."}
-              </p>
-              <Button
-                onClick={() => navigate("/dashboard")}
-                className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-2"
-              >
-                <Upload className="w-4 h-4" />
-                {language === "ar" ? "ارفع سيرة من لوحة التحكم" : "Upload from Dashboard"}
-              </Button>
+              <Upload className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-muted-foreground text-sm">{language === "ar" ? "لا توجد سير ذاتية مرفوعة بعد." : "No resumes uploaded yet."}</p>
+              <Button onClick={() => navigate("/dashboard")} className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-2"><Upload className="w-4 h-4" />{language === "ar" ? "ارفع سيرة من لوحة التحكم" : "Upload from Dashboard"}</Button>
             </div>
           ) : (
             <div className="space-y-2.5">
               {userResumes.map((resume) => {
                 const isSelected = (selectedResumeId || resumeId) === resume.id;
                 return (
-                  <button
-                    key={resume.id}
-                    onClick={() => handleResumeSelect(resume.id)}
-                    className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all group text-left ${isSelected ? "border-violet-500 bg-violet-500/5" : "border-border hover:border-violet-400 bg-card hover:bg-violet-500/5"}`}
-                  >
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${isSelected ? "bg-violet-500" : "bg-violet-500/10 group-hover:bg-violet-500"}`}
-                    >
-                      <FileText
-                        className={`w-5 h-5 transition-colors ${isSelected ? "text-white" : "text-violet-500 group-hover:text-white"}`}
-                      />
+                  <button key={resume.id} onClick={() => handleResumeSelect(resume.id)} className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all group text-left ${isSelected ? "border-violet-500 bg-violet-500/5" : "border-border hover:border-violet-400 bg-card hover:bg-violet-500/5"}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${isSelected ? "bg-violet-500" : "bg-violet-500/10 group-hover:bg-violet-500"}`}>
+                      <FileText className={`w-5 h-5 transition-colors ${isSelected ? "text-white" : "text-violet-500 group-hover:text-white"}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">{resume.file_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(resume.created_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{new Date(resume.created_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US", { year: "numeric", month: "short", day: "numeric" })}</p>
                     </div>
-                    <ArrowRight
-                      className={`w-4 h-4 transition-all flex-shrink-0 ${isSelected ? "text-violet-500" : "text-muted-foreground group-hover:text-violet-500 group-hover:translate-x-0.5"}`}
-                    />
+                    <ArrowRight className={`w-4 h-4 flex-shrink-0 ${isSelected ? "text-violet-500" : "text-muted-foreground group-hover:text-violet-500"}`} />
                   </button>
                 );
               })}
+              {autoAnalyzeFailed && (
+                <div className="flex flex-col items-center gap-3 py-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 text-center mt-4">
+                  <AlertTriangle className="w-8 h-8 text-amber-500" />
+                  <p className="text-sm font-semibold text-foreground">{language === "ar" ? "تعذّر عرض نتيجة التحليل" : "Could not display the analysis"}</p>
+                  <Button onClick={handleRetrySelectedResume} className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-2"><Sparkles className="w-4 h-4" />{language === "ar" ? "إعادة المحاولة" : "Retry Analysis"}</Button>
+                </div>
+              )}
             </div>
           )}
         </main>
@@ -1534,917 +1497,748 @@ const Analysis = () => {
     );
   }
 
+  /* ══════════════════ REPORT VIEW ══════════════════ */
+  const ar = language === "ar";
+
+  // ── Report tabs config ──
+  const reportTabs = [
+    { id: "overview",     labelAr: "ملخص", labelEn: "Overview",    icon: BarChart3 },
+    { id: "ats",          labelAr: "تفاصيل ATS", labelEn: "ATS Details", icon: ListChecks },
+    { id: "career",       labelAr: "التوصيات", labelEn: "Career",   icon: Briefcase },
+    { id: "salary",       labelAr: "الرواتب", labelEn: "Salary",   icon: DollarSign },
+    { id: "recruiter",    labelAr: "نظرة المجند", labelEn: "Recruiter", icon: Eye },
+    { id: "improvements", labelAr: "التحسينات", labelEn: "Fixes",  icon: Zap },
+    { id: "interview",    labelAr: "المقابلة", labelEn: "Interview", icon: MessageSquare },
+    { id: "enhanced",     labelAr: "السيرة المحسنة", labelEn: "Enhanced CV", icon: Wand2 },
+  ] as const;
+  type ReportTab = (typeof reportTabs)[number]["id"];
+
   const handleGenerateEnhancedResume = async () => {
     if (!resumeId || !storedResumeData || !result) {
-      toast.error(
-        language === "ar"
-          ? "لا توجد بيانات كافية لإنشاء السيرة المحسنة"
-          : "Not enough data to generate the enhanced resume",
-      );
+      toast.error(ar ? "لا توجد بيانات كافية" : "Not enough data");
       return;
     }
-
     try {
       await rewrite({
-        resume: {
-          id: resumeId,
-          raw_resume_text: storedResumeData.raw_resume_text || "",
-          structured_resume_json: storedResumeData.structured_resume_json || {},
-          corrections: correctionsDraft,
-        },
+        resume: { id: resumeId, raw_resume_text: storedResumeData.raw_resume_text || "", structured_resume_json: storedResumeData.structured_resume_json || {}, corrections: correctionsDraft },
         analysis: result as unknown as Record<string, unknown>,
         userId: user?.id,
       });
-
       setActiveTab("enhanced");
-      toast.success(language === "ar" ? "تم إنشاء السيرة المحسنة بنجاح" : "Enhanced resume generated successfully");
+      toast.success(ar ? "تم إنشاء السيرة المحسنة" : "Enhanced resume generated");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to generate enhanced resume";
-      if (/insufficient points/i.test(message)) {
-        setShowInsufficientPoints(true);
-        return;
-      }
-      console.error("Enhanced resume generation failed:", error);
-      toast.error(language === "ar" ? "تعذر إنشاء السيرة المحسنة" : "Could not generate the enhanced resume");
+      const message = error instanceof Error ? error.message : "";
+      if (/insufficient points/i.test(message)) { setShowInsufficientPoints(true); return; }
+      toast.error(ar ? "تعذر إنشاء السيرة المحسنة" : "Could not generate the enhanced resume");
     }
   };
 
-  /* ══════════════════ REPORT VIEW ══════════════════ */
-  const ar = language === "ar";
   return (
     <div className="min-h-screen bg-background" dir={ar ? "rtl" : "ltr"}>
       <FlowProgressBar activeStep="analyze" />
       {analysisDialog}
-      <style>{`@media print { header,button { display:none!important } body { background:white!important } #analysis-report { max-width:100%!important; padding:0!important } }`}</style>
+      <style>{`@media print { header,button,.no-print { display:none!important } body { background:white!important } }`}</style>
 
-      {/* HEADER */}
-      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/90 backdrop-blur-md">
-        <div className="container max-w-5xl flex items-center gap-3 h-14">
-          <Button variant="ghost" size="icon" asChild className="h-8 w-8 rounded-lg">
-            <Link to="/dashboard">
-              <ArrowLeft className={`w-4 h-4 ${ar ? "rotate-180" : ""}`} />
-            </Link>
+      {/* ══ HEADER ══ */}
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur-md">
+        <div className="container max-w-7xl flex items-center gap-3 h-14 px-4">
+          <Button variant="ghost" size="icon" asChild className="h-8 w-8 rounded-lg flex-shrink-0">
+            <Link to="/dashboard"><ArrowLeft className={`w-4 h-4 ${ar ? "rotate-180" : ""}`} /></Link>
           </Button>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center flex-shrink-0">
               <BarChart3 className="w-3.5 h-3.5 text-violet-500" />
             </div>
-            <span className="font-bold text-sm text-foreground hidden sm:block">{t.analysis.title}</span>
+            <span className="font-bold text-sm text-foreground hidden sm:block truncate">{ar ? "تقرير تحليل السيرة الذاتية" : "Resume Analysis Report"}</span>
+            {/* Live score badge */}
+            <span className={`hidden sm:inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : "bg-red-500/10 text-red-600 border-red-500/20"}`}>
+              ATS {result.ats_score}/100
+            </span>
           </div>
           <div className="flex-1" />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRetrySelectedResume}
-              disabled={analyzing}
-              className="gap-1.5 rounded-lg text-xs"
-            >
-              {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BarChart3 className="w-3.5 h-3.5" />}
-              {ar ? "إعادة التحليل / Re-analyze" : "Re-analyze / إعادة التحليل"}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <Button variant="outline" size="sm" onClick={handleRetrySelectedResume} disabled={analyzing} className="gap-1.5 rounded-lg text-xs h-8 border-violet-500/30 hover:border-violet-500 hover:bg-violet-500/5 hidden sm:flex">
+              {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" /> : <BarChart3 className="w-3.5 h-3.5 text-violet-500" />}
+              {ar ? "إعادة التحليل" : "Re-analyze"}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setActiveTab("enhanced")}
-              disabled={!result}
-              className="gap-1.5 rounded-lg text-xs"
-            >
-              <Wand2 className="w-3.5 h-3.5" />
-              {ar ? "تحسين السيرة / Enhance Resume" : "Enhance Resume / تحسين السيرة"}
+            <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 rounded-lg text-xs h-8 hidden sm:flex">
+              <Download className="w-3.5 h-3.5" />{ar ? "تنزيل" : "Print"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 rounded-lg text-xs">
-              <Download className="w-3.5 h-3.5" />
-              {ar ? "تنزيل / Download" : "Download / تنزيل"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              asChild
-              className="gap-1.5 rounded-lg text-xs"
-            >
-              <Link to="/dashboard/interview-avatar">
-                <MessageSquare className="w-3.5 h-3.5" />
-                {ar ? "دعوة مقابلة AI / Send AI Interview" : "Send AI Interview / دعوة مقابلة AI"}
+            <Button size="sm" asChild className="gap-1.5 rounded-lg text-xs h-8 bg-violet-600 hover:bg-violet-700 text-white">
+              <Link to={buildEnhanceUrl(priorityFixes[0]?.focus || "professionalSummary")}>
+                <Sparkles className="w-3.5 h-3.5" />{ar ? "تحسين السيرة" : "Improve CV"}
               </Link>
             </Button>
           </div>
         </div>
       </header>
 
-      <main id="analysis-report" className="container max-w-5xl py-6 px-4">
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as "overview" | "corrections" | "enhanced")}
-          className="space-y-5"
-        >
-          <TabsList className="grid h-auto w-full grid-cols-3 rounded-2xl bg-muted/60 p-1">
-            <TabsTrigger value="overview" className="rounded-xl">
-              {ar ? "التحليل" : "Overview"}
-            </TabsTrigger>
-            <TabsTrigger value="corrections" className="rounded-xl">
-              {ar ? "التصحيحات" : "Corrections"}
-            </TabsTrigger>
-            <TabsTrigger value="enhanced" className="rounded-xl">
-              {ar ? "السيرة المحسنة" : "Enhanced Resume"}
-            </TabsTrigger>
-          </TabsList>
+      <main className="container max-w-7xl py-6 px-4">
+        {/* ══ HERO: SCORE + SUMMARY CARD ══ */}
+        <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-violet-600/10 via-background to-indigo-600/6 p-6 mb-6 shadow-lg shadow-violet-500/5">
+          {/* BG blobs */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/6 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-40 h-40 bg-indigo-500/6 rounded-full blur-2xl pointer-events-none" />
 
-          <TabsContent value="overview" className="mt-0 space-y-5">
-            {/* ── HERO SCORE CARD ── */}
-            <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-violet-500/8 via-background to-indigo-500/5 p-6">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-violet-500/8 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 left-0 w-28 h-28 bg-indigo-500/8 rounded-full blur-2xl pointer-events-none" />
-
-              <div className="relative flex flex-col md:flex-row md:items-center gap-6">
-                {/* Score ring */}
-                <ScoreRing score={result.ats_score} />
-
-                {/* Info */}
-                <div className="flex-1 space-y-3">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      {result.candidate_name && (
-                        <span className="text-sm font-bold text-foreground">👤 {result.candidate_name}</span>
-                      )}
-                      {result.target_role && (
-                        <Badge variant="secondary" className="text-xs gap-1">
-                          <Target className="w-3 h-3" />
-                          {result.target_role}
-                        </Badge>
-                      )}
-                    </div>
-                    <div
-                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-bold
-                  ${
-                    overallStatus?.tone === "success"
-                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20"
-                      : overallStatus?.tone === "amber"
-                        ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20"
-                        : "bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/20"
-                  }`}
-                    >
-                      {overallStatus?.tone === "success" ? (
-                        <Trophy className="w-4 h-4" />
-                      ) : overallStatus?.tone === "amber" ? (
-                        <AlertTriangle className="w-4 h-4" />
-                      ) : (
-                        <TrendingDown className="w-4 h-4" />
-                      )}
-                      {overallStatus?.title}
-                    </div>
+          <div className="relative flex flex-col lg:flex-row gap-6">
+            {/* Left: Ring + name */}
+            <div className="flex items-center gap-5">
+              <ScoreRing score={result.ats_score} />
+              <div className="space-y-2">
+                {result.candidate_name && <p className="text-base font-bold text-foreground">👤 {result.candidate_name}</p>}
+                {result.target_role && (
+                  <div className="flex items-center gap-2">
+                    <Target className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+                    <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">{result.target_role}</span>
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">{overallStatus?.description}</p>
-
-                  {/* Quick stats */}
-                  <div className="flex flex-wrap gap-2">
-                    {result.executive_summary.candidate_level && (
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-300 font-medium border border-violet-500/20">
-                        {result.executive_summary.candidate_level}
-                      </span>
-                    )}
-                    <span
-                      className={`text-xs px-2.5 py-1 rounded-full font-medium border ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"}`}
-                    >
-                      ATS: {result.ats_score}/100
-                    </span>
-                  </div>
+                )}
+                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${overallStatus?.tone === "success" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : overallStatus?.tone === "amber" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"}`}>
+                  {overallStatus?.tone === "success" ? <Trophy className="w-3.5 h-3.5" /> : overallStatus?.tone === "amber" ? <AlertTriangle className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                  {overallStatus?.title}
                 </div>
-
-                {/* CTA */}
-                <Button
-                  size="lg"
-                  asChild
-                  className="flex-shrink-0 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg shadow-violet-500/20 rounded-xl gap-2"
-                >
-                  <Link to={buildEnhanceUrl(priorityFixes[0]?.focus || "professionalSummary")}>
-                    <Sparkles className="w-4 h-4" />
-                    {ar ? "تحسين السيرة الآن" : "Improve Now"}
-                  </Link>
-                </Button>
+                <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">{overallStatus?.description}</p>
               </div>
             </div>
 
-            {/* ── PRIORITY FIXES ── */}
-            {hasArray(priorityFixes) && (
-              <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                    <Zap className="w-4 h-4 text-amber-500" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">
-                      {ar ? "أهم الإصلاحات أولاً" : "Top Priority Fixes"}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar ? "أسرع النقاط التي سترفع جودة سيرتك" : "Fastest improvements that lift resume quality"}
-                    </p>
-                  </div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {priorityFixes.map((item) => (
-                    <Link
-                      key={item.id}
-                      to={buildEnhanceUrl(item.focus)}
-                      className="group flex flex-col gap-2 p-3.5 rounded-xl border-2 border-border hover:border-violet-400 bg-background/60 hover:bg-violet-500/5 transition-all"
-                    >
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold w-fit ${item.priority === "high" ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}
-                      >
-                        {item.priority === "high" ? (ar ? "عالية" : "High") : ar ? "متوسطة" : "Medium"}
-                      </span>
-                      <p className="text-xs font-semibold text-foreground leading-relaxed">{item.title}</p>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed flex-1">{item.action}</p>
-                      <span className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
-                        {ar ? "إصلاح في المحرر" : "Fix in Editor"}
-                        <ChevronRight className="w-3 h-3" />
-                      </span>
-                    </Link>
-                  ))}
-                </div>
+            {/* Right: Section mini-scores grid */}
+            <div className="flex-1 flex flex-col justify-center gap-3">
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                {Object.entries(result.section_scores)
+                  .filter(([key]) => sectionScoreLabels[key])
+                  .slice(0, 7)
+                  .map(([key, score]) => {
+                    const n = normalizeScore(score);
+                    return (
+                      <Link key={key} to={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")}
+                        className="group flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/60 bg-background/70 hover:border-violet-400/50 hover:bg-violet-500/5 transition-all cursor-pointer">
+                        <span className={`text-xl font-black tabular-nums leading-none ${scoreColor(n)}`}>{n}</span>
+                        <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${n}%`, background: scoreRingColor(n) }} />
+                        </div>
+                        <span className="text-[9px] text-muted-foreground text-center leading-tight group-hover:text-foreground transition-colors">
+                          {sectionScoreLabels[key]?.split(" ").slice(0, 2).join(" ") || key}
+                        </span>
+                      </Link>
+                    );
+                  })}
               </div>
-            )}
-
-            {/* ── EXECUTIVE SUMMARY ── */}
-            {result.executive_summary && (
-              <div className="space-y-3">
-                {hasText(result.executive_summary.summary_paragraphs) &&
-                  !result.executive_summary.summary_paragraphs.startsWith("This score was generated") &&
-                  !result.executive_summary.summary_paragraphs.startsWith("تم إنشاء هذا التقييم") && (
-                    <div className="p-5 bg-card rounded-xl border border-border">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Brain className="w-4 h-4 text-violet-500" />
-                        <h3 className="text-sm font-bold text-foreground">
-                          {ar ? "الملخص التنفيذي" : "Executive Summary"}
-                        </h3>
-                      </div>
-                      <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                        {result.executive_summary.summary_paragraphs}
-                      </p>
-                    </div>
-                  )}
-
-                {(hasArray(result.executive_summary.best_fit_roles) ||
-                  hasArray(result.executive_summary.top_strengths) ||
-                  hasArray(result.executive_summary.main_risks)) && (
-                  <div className="grid md:grid-cols-3 gap-3">
-                    {hasArray(result.executive_summary.best_fit_roles) && (
-                      <div className="p-4 bg-card rounded-xl border border-border space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Briefcase className="w-4 h-4 text-violet-500" />
-                          <h4 className="text-xs font-bold text-foreground uppercase tracking-wide">
-                            {t.analysis.bestFitRoles}
-                          </h4>
-                        </div>
-                        <ul className="space-y-1">
-                          {result.executive_summary.best_fit_roles
-                            .filter((r) => !isJunk(r) && typeof r === "string")
-                            .map((r, i) => (
-                              <li key={i} className="text-xs text-foreground">
-                                • {r}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                    {hasArray(result.executive_summary.top_strengths) && (
-                      <div className="p-4 bg-card rounded-xl border border-emerald-500/20 bg-emerald-500/3 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4 text-emerald-500" />
-                          <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
-                            {t.analysis.strengths}
-                          </h4>
-                        </div>
-                        <ul className="space-y-1">
-                          {result.executive_summary.top_strengths
-                            .filter((s) => !isJunk(s) && typeof s === "string")
-                            .map((s, i) => (
-                              <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
-                                <span className="text-emerald-500 flex-shrink-0">✓</span>
-                                {s}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                    {hasArray(result.executive_summary.main_risks) && (
-                      <div className="p-4 bg-card rounded-xl border border-red-500/20 bg-red-500/3 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Eye className="w-4 h-4 text-red-500" />
-                          <h4 className="text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">
-                            {t.analysis.risks}
-                          </h4>
-                        </div>
-                        <ul className="space-y-1">
-                          {result.executive_summary.main_risks
-                            .filter((r) => !isJunk(r) && typeof r === "string")
-                            .map((r, i) => (
-                              <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
-                                <span className="text-red-500 flex-shrink-0">!</span>
-                                {r}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+              {/* Status badges row */}
+              <div className="flex flex-wrap gap-2">
+                {result.executive_summary.candidate_level && (
+                  <span className="text-xs px-3 py-1 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-300 font-medium border border-violet-500/20">
+                    {result.executive_summary.candidate_level}
+                  </span>
                 )}
+                <span className={`text-xs px-3 py-1 rounded-full font-bold border flex items-center gap-1.5 ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : "bg-red-500/10 text-red-600 border-red-500/20"}`}>
+                  <Zap className="w-3 h-3" />
+                  {result.ats_score >= 85 ? (ar ? "جاهز للتقديم" : "Apply-Ready") : result.ats_score >= 70 ? (ar ? "قريب من الجاهزية" : "Nearly Ready") : result.ats_score >= 55 ? (ar ? "يحتاج تحسين" : "Needs Work") : (ar ? "يحتاج مراجعة كبيرة" : "Major Revision")}
+                </span>
               </div>
-            )}
+            </div>
 
-            {/* ── SECTION SCORES ── */}
-            {hasObject(result.section_scores) && (
-              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-violet-500" />
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">{ar ? "نقاط أقسام السيرة" : "Section Scores"}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar
-                        ? "اضغط على أي قسم للانتقال لمحرر التحسين"
-                        : "Click any section to jump to the enhancement editor"}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2.5">
-                  {Object.entries(result.section_scores)
-                    .filter(([key, score]) => {
-                      const n = normalizeScore(score);
-                      return n >= 0 && (sectionScoreLabels[key] !== undefined || key.length < 40);
-                    })
-                    .sort((a, b) => normalizeScore(a[1]) - normalizeScore(b[1]))
-                    .slice(0, 7)
-                    .map(([key, score]) => (
-                      <ScoreBar
-                        key={key}
-                        label={
-                          sectionScoreLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-                        }
-                        score={normalizeScore(score)}
-                        subtitle={
-                          lowScoreSections.some((s) => s.key === key)
-                            ? ar
-                              ? "من أقل الأقسام — يفضل البدء به"
-                              : "One of your lowest — recommended first"
-                            : undefined
-                        }
-                        actionLabel={ar ? "تحسين هذا القسم" : "Improve This Section"}
-                        actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")}
-                      />
-                    ))}
-                </div>
-              </div>
-            )}
+            {/* CTA */}
+            <div className="flex flex-col gap-2 justify-center flex-shrink-0">
+              <Button size="lg" asChild className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg shadow-violet-500/20 gap-2">
+                <Link to={buildEnhanceUrl(priorityFixes[0]?.focus || "professionalSummary")}>
+                  <Sparkles className="w-4 h-4" />{ar ? "تحسين السيرة الآن" : "Improve Now"}
+                </Link>
+              </Button>
+              <Button size="sm" variant="outline" asChild className="rounded-xl gap-2">
+                <Link to="/dashboard/interview-avatar">
+                  <MessageSquare className="w-4 h-4" />{ar ? "مقابلة AI" : "AI Interview"}
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
 
-            {/* ── BEFORE / AFTER ── */}
-            {hasText(transformationPreview.before) &&
-              hasText(transformationPreview.after) &&
-              transformationPreview.before !== transformationPreview.after && (
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-muted-foreground/50" />
-                      {ar ? "قبل التحسين" : "Before"}
-                    </h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-lg p-3">
-                      {transformationPreview.before}
-                    </p>
+        {/* ══ REPORT TABS NAV ══ */}
+        <div className="sticky top-14 z-20 bg-background/95 backdrop-blur-md pb-3 -mx-4 px-4">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide border-b border-border/60">
+            {reportTabs.map(({ id, labelAr, labelEn, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id as any)}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
+                  activeTab === id
+                    ? "border-violet-500 text-violet-600 dark:text-violet-400 bg-violet-500/5"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {ar ? labelAr : labelEn}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ══ TAB PANELS ══ */}
+        <div className="mt-5 space-y-5">
+
+          {/* ── OVERVIEW TAB ── */}
+          {activeTab === "overview" && (
+            <div className="space-y-5">
+              {/* Executive Summary */}
+              {result.executive_summary && (
+                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                  <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
+                    <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+                      <Brain className="w-4.5 h-4.5 text-violet-500" style={{width:"18px",height:"18px"}} />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-foreground">{ar ? "الملخص التنفيذي" : "Executive Summary"}</h2>
+                      <p className="text-xs text-muted-foreground">{ar ? "تقييم شامل لجاهزية السيرة" : "Comprehensive resume readiness assessment"}</p>
+                    </div>
                   </div>
-                  <div className="rounded-xl border-2 border-violet-500/30 bg-violet-500/5 p-4 space-y-2">
-                    <h4 className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-violet-500" />
-                      {ar ? "بعد التحسين" : "After"}
-                    </h4>
-                    <p className="text-sm text-foreground leading-relaxed bg-background/70 rounded-lg p-3">
-                      {transformationPreview.after}
-                    </p>
+                  <div className="p-5 space-y-4">
+                    {hasText(result.executive_summary.summary_paragraphs) &&
+                      !result.executive_summary.summary_paragraphs.startsWith("This score was generated") &&
+                      !result.executive_summary.summary_paragraphs.startsWith("تم إنشاء هذا التقييم") && (
+                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap bg-muted/30 rounded-xl p-4">{result.executive_summary.summary_paragraphs}</p>
+                      )}
+                    <div className="grid md:grid-cols-3 gap-3">
+                      {hasArray(result.executive_summary.best_fit_roles) && (
+                        <div className="p-4 rounded-xl border border-border bg-background/60 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Briefcase className="w-4 h-4 text-violet-500" />
+                            <h4 className="text-xs font-bold text-foreground uppercase tracking-wide">{t.analysis.bestFitRoles}</h4>
+                          </div>
+                          <ul className="space-y-1.5">
+                            {result.executive_summary.best_fit_roles.filter(r => !isJunk(r)).map((r, i) => (
+                              <li key={i} className="text-xs text-foreground flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-violet-500/15 text-violet-600 text-[9px] flex items-center justify-center font-bold flex-shrink-0">{i+1}</span>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {hasArray(result.executive_summary.top_strengths) && (
+                        <div className="p-4 rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-emerald-500/3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4 text-emerald-500" />
+                            <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">{t.analysis.strengths}</h4>
+                          </div>
+                          <ul className="space-y-2">
+                            {result.executive_summary.top_strengths.filter(s => !isJunk(s)).map((s, i) => (
+                              <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-emerald-500/8 rounded-lg p-2">
+                                <span className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-[9px] font-bold text-emerald-600 flex items-center justify-center flex-shrink-0 mt-0.5">{i+1}</span>{s}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {hasArray(result.executive_summary.main_risks) && (
+                        <div className="p-4 rounded-xl border border-red-500/25 bg-gradient-to-br from-red-500/8 to-red-500/3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-500" />
+                            <h4 className="text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">{t.analysis.risks}</h4>
+                          </div>
+                          <ul className="space-y-2">
+                            {result.executive_summary.main_risks.filter(r => !isJunk(r)).map((r, i) => (
+                              <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-red-500/8 rounded-lg p-2">
+                                <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />{r}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
-            {/* ── ATS BREAKDOWN ── */}
-            {hasBreakdown && (
-              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <ListChecks className="w-4 h-4 text-violet-500" />
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">{t.analysis.atsBreakdown}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar ? "تفصيل كل جانب من جوانب سيرتك" : "Detailed performance of each resume aspect"}
-                    </p>
+              {(analysisStrengths.length > 0 || analysisWeaknesses.length > 0 || analysisMissingKeywords.length > 0 || analysisImprovements.length > 0) && (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-emerald-500/20 bg-card p-5 space-y-3 w-full max-w-none">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-emerald-500" />
+                      <h3 className="text-sm font-bold text-foreground">{ar ? "نقاط القوة" : "Strengths"}</h3>
+                    </div>
+                    <ul className="space-y-2">
+                      {analysisStrengths.map((item, index) => (
+                        <li key={`strength-${index}`} className="text-sm leading-6 text-foreground bg-emerald-500/5 border border-emerald-500/10 rounded-xl px-3 py-2">{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-2xl border border-red-500/20 bg-card p-5 space-y-3 w-full max-w-none">
+                    <div className="flex items-center gap-2">
+                      <TrendingDown className="w-4 h-4 text-red-500" />
+                      <h3 className="text-sm font-bold text-foreground">{ar ? "نقاط الضعف" : "Weaknesses"}</h3>
+                    </div>
+                    <ul className="space-y-2">
+                      {analysisWeaknesses.map((item, index) => (
+                        <li key={`weakness-${index}`} className="text-sm leading-6 text-foreground bg-red-500/5 border border-red-500/10 rounded-xl px-3 py-2">{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-500/20 bg-card p-5 space-y-3 w-full max-w-none lg:col-span-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ListChecks className="w-4 h-4 text-amber-500" />
+                      <h3 className="text-sm font-bold text-foreground">{ar ? "الكلمات المفتاحية المفقودة" : "Missing Keywords"}</h3>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {analysisMissingKeywords.map((item, index) => (
+                        <Badge key={`keyword-${index}`} variant="secondary" className="px-3 py-1 text-xs bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">{item}</Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-violet-500/20 bg-card p-5 space-y-3 w-full max-w-none lg:col-span-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-violet-500" />
+                      <h3 className="text-sm font-bold text-foreground">{ar ? "التحسينات المقترحة" : "Improvements"}</h3>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {analysisImprovements.map((item, index) => (
+                        <div key={`improvement-${index}`} className="rounded-xl border border-border bg-background/60 p-4 space-y-2 w-full max-w-none">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-foreground leading-6">{item.title}</p>
+                            <Badge variant="secondary" className="text-[10px] uppercase">{item.priority}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground leading-6">{item.action}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-3">
-                  {Object.entries(result.ats_breakdown)
-                    .filter(([, data]) => normalizeScore(data.score) >= 0)
-                    .slice(0, 7)
-                    .map(([key, data]) => (
-                      <BreakdownCard
-                        key={key}
-                        title={breakdownLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                        score={normalizeScore(data.score)}
-                        currentState={safeText(data.current_state)}
-                        problem={safeText(data.problem)}
-                        improvement={safeText(data.recommended_improvement)}
-                        actionLabel={ar ? "تحسين هذا الجزء" : "Improve This Area"}
-                        actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")}
-                      />
+              )}
+
+              {/* Priority Fixes */}
+              {hasArray(priorityFixes) && (
+                <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 overflow-hidden">
+                  <div className="flex items-center justify-between p-5 border-b border-amber-500/15">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
+                        <Zap className="w-4 h-4 text-amber-500" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                          {ar ? "أولويات التحسين الفوري" : "Immediate Priority Fixes"}
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">{priorityFixes.length}</span>
+                        </h2>
+                        <p className="text-xs text-muted-foreground">{ar ? "ابدأ بهذه النقاط لأكبر تأثير على نتيجة ATS" : "Start here for maximum ATS score impact"}</p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setActiveTab("improvements" as any)} className="text-xs rounded-lg gap-1">
+                      {ar ? "عرض الكل" : "View all"}<ChevronRight className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <div className="p-5 grid md:grid-cols-3 gap-3">
+                    {priorityFixes.map((item) => (
+                      <Link key={item.id} to={buildEnhanceUrl(item.focus)} className="group flex flex-col gap-2 p-3.5 rounded-xl border-2 border-border hover:border-violet-400 bg-background/70 hover:bg-violet-500/5 transition-all">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold w-fit ${item.priority === "high" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}`}>
+                          {item.priority === "high" ? (ar ? "عالية" : "High") : ar ? "متوسطة" : "Medium"}
+                        </span>
+                        <p className="text-xs font-semibold text-foreground leading-relaxed">{item.title}</p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed flex-1">{item.action}</p>
+                        <span className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
+                          {ar ? "إصلاح في المحرر" : "Fix in Editor"}<ChevronRight className="w-3 h-3" />
+                        </span>
+                      </Link>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Before / After preview */}
+              {hasText(transformationPreview.before) && hasText(transformationPreview.after) && transformationPreview.before !== transformationPreview.after && (
+                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                  <div className="flex items-center gap-3 p-5 border-b border-border/60">
+                    <Wand2 className="w-4 h-4 text-violet-500" />
+                    <h2 className="text-sm font-bold text-foreground">{ar ? "مثال: قبل وبعد التحسين" : "Before & After Preview"}</h2>
+                  </div>
+                  <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
+                    <div className="p-5 space-y-2">
+                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-muted-foreground/50" />{ar ? "قبل" : "Before"}</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-lg p-3">{transformationPreview.before}</p>
+                    </div>
+                    <div className="p-5 space-y-2">
+                      <h4 className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" />{ar ? "بعد" : "After"}</h4>
+                      <p className="text-sm text-foreground leading-relaxed bg-violet-500/5 rounded-lg p-3">{transformationPreview.after}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ATS DETAILS TAB ── */}
+          {activeTab === "ats" && (
+            <div className="space-y-5">
+              {/* Section scores full */}
+              {hasObject(result.section_scores) && (
+                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                  <div className="flex items-center justify-between p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+                        <BarChart3 className="w-4 h-4 text-violet-500" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-foreground">{ar ? "تقييم أقسام السيرة" : "Section Performance"}</h2>
+                        <p className="text-xs text-muted-foreground">{ar ? "اضغط على أي قسم للانتقال للمحرر" : "Tap any section to jump to editor"}</p>
+                      </div>
+                    </div>
+                    <div className="hidden md:flex gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" />{ar ? "ممتاز ≥80" : "Strong ≥80"}</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />{ar ? "جيد ≥60" : "Good ≥60"}</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />{ar ? "ضعيف <60" : "Weak <60"}</span>
+                    </div>
+                  </div>
+                  <div className="p-5 space-y-2.5">
+                    {Object.entries(result.section_scores)
+                      .filter(([key, score]) => { const n = normalizeScore(score); return n >= 0 && sectionScoreLabels[key]; })
+                      .sort((a, b) => normalizeScore(a[1]) - normalizeScore(b[1]))
+                      .map(([key, score]) => (
+                        <ScoreBar key={key} label={sectionScoreLabels[key] || key} score={normalizeScore(score)}
+                          subtitle={lowScoreSections.some(s => s.key === key) ? (ar ? "من أقل الأقسام — يفضل البدء به" : "One of your lowest — start here") : undefined}
+                          actionLabel={ar ? "تحسين" : "Improve"} actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")} />
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ATS Breakdown */}
+              {hasObject(result.ats_breakdown || null) && (
+                <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                  <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-indigo-500/5 to-transparent">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                      <ListChecks className="w-4 h-4 text-indigo-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-foreground">{t.analysis.atsBreakdown}</h2>
+                      <p className="text-xs text-muted-foreground">{ar ? "تفصيل كل جانب من جوانب سيرتك" : "Detailed breakdown of each resume aspect"}</p>
+                    </div>
+                  </div>
+                  <div className="p-5 space-y-3">
+                    {Object.entries(result.ats_breakdown)
+                      .filter(([, data]) => normalizeScore(data.score) >= 0)
+                      .map(([key, data]) => (
+                        <BreakdownCard key={key}
+                          title={breakdownLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                          score={normalizeScore(data.score)}
+                          currentState={safeText(data.current_state)} problem={safeText(data.problem)} improvement={safeText(data.recommended_improvement)}
+                          actionLabel={ar ? "تحسين" : "Improve"} actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")} />
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── CAREER TAB ── */}
+          {activeTab === "career" && hasCareer && (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <Briefcase className="w-4 h-4 text-emerald-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{t.analysis.career}</h2>
+                  <p className="text-xs text-muted-foreground">{ar ? "توصيات مهنية مبنية على تحليل سيرتك" : "Career recommendations based on your resume"}</p>
                 </div>
               </div>
-            )}
-
-            {/* ── CAREER RECOMMENDATIONS ── */}
-            {hasCareer && (
-              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Briefcase className="w-4 h-4 text-violet-500" />
+              <div className="p-5 space-y-4">
+                {hasArray(result.career_recommendations.top_roles) && (
                   <div>
-                    <h3 className="text-sm font-bold text-foreground">{t.analysis.career}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar
-                        ? "توصيات مهنية مبنية على تحليل سيرتك"
-                        : "Career recommendations based on your resume analysis"}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {hasArray(result.career_recommendations.top_roles) && (
-                    <div className="p-4 rounded-xl border border-border bg-background/50">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                        {t.analysis.topRoles}
-                      </h4>
-                      <div className="space-y-2">
-                        {result.career_recommendations.top_roles.map((r, i) => (
-                          <div key={i} className="p-2.5 bg-muted/40 rounded-lg">
-                            <p className="text-xs font-semibold text-foreground">{r.role}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">{r.why_it_fits}</p>
+                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.topRoles}</h3>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {result.career_recommendations.top_roles.map((r, i) => (
+                        <div key={i} className="p-4 bg-muted/30 rounded-xl border border-border hover:border-emerald-500/30 transition-colors">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-600 text-xs font-bold flex items-center justify-center">{i+1}</span>
+                            <p className="text-xs font-bold text-foreground">{r.role}</p>
                           </div>
+                          <p className="text-xs text-muted-foreground">{r.why_it_fits}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid md:grid-cols-2 gap-4">
+                  {hasArray(result.career_recommendations.skills_to_improve) && (
+                    <div className="p-4 rounded-xl border border-border bg-background/60">
+                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.skillsToImprove}</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {result.career_recommendations.skills_to_improve.filter(s => !isJunk(s)).map((s, i) => (
+                          <span key={i} className="text-xs px-2.5 py-1 rounded-full border border-border bg-muted/50 text-foreground font-medium">{s}</span>
                         ))}
                       </div>
                     </div>
                   )}
-                  {(hasArray(result.career_recommendations.skills_to_improve) ||
-                    hasArray(result.career_recommendations.certifications_recommended)) && (
-                    <div className="grid md:grid-cols-2 gap-3">
-                      {hasArray(result.career_recommendations.skills_to_improve) && (
-                        <div className="p-4 rounded-xl border border-border bg-background/50">
-                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                            {t.analysis.skillsToImprove}
-                          </h4>
-                          <ul className="space-y-1">
-                            {result.career_recommendations.skills_to_improve
-                              .filter((s) => !isJunk(s) && typeof s === "string")
-                              .map((s, i) => (
-                                <li key={i} className="text-xs text-foreground">
-                                  • {s}
-                                </li>
-                              ))}
-                          </ul>
-                        </div>
-                      )}
-                      {hasArray(result.career_recommendations.certifications_recommended) && (
-                        <div className="p-4 rounded-xl border border-border bg-background/50">
-                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                            {t.analysis.certifications}
-                          </h4>
-                          <ul className="space-y-1">
-                            {result.career_recommendations.certifications_recommended
-                              .filter((c) => !isJunk(c) && typeof c === "string")
-                              .map((c, i) => (
-                                <li key={i} className="text-xs text-foreground">
-                                  • {c}
-                                </li>
-                              ))}
-                          </ul>
-                        </div>
-                      )}
+                  {hasArray(result.career_recommendations.certifications_recommended) && (
+                    <div className="p-4 rounded-xl border border-border bg-background/60">
+                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.certifications}</h4>
+                      <ul className="space-y-1.5">
+                        {result.career_recommendations.certifications_recommended.filter(c => !isJunk(c)).map((c, i) => (
+                          <li key={i} className="text-xs text-foreground flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />{c}</li>
+                        ))}
+                      </ul>
                     </div>
                   )}
-                  {(hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.thirty_days) ||
-                    hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.sixty_days) ||
-                    hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.ninety_days)) && (
-                    <div className="p-4 rounded-xl border border-border bg-background/50">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">
-                        {t.analysis.actionPlan}
-                      </h4>
-                      <div className="grid md:grid-cols-3 gap-2">
-                        {(["thirty_days", "sixty_days", "ninety_days"] as const).map((period) => {
-                          const val = result.career_recommendations.thirty_sixty_ninety_day_plan?.[period];
-                          if (!hasText(val)) return null;
-                          return (
-                            <div key={period} className="p-3 bg-violet-500/8 rounded-lg border border-violet-500/15">
-                              <p className="text-xs font-bold text-violet-600 dark:text-violet-400 mb-1">
-                                {period === "thirty_days" ? "30" : period === "sixty_days" ? "60" : "90"}{" "}
-                                {t.analysis.days}
-                              </p>
-                              <p className="text-xs text-foreground leading-relaxed">{val}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
+                </div>
+                {(hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.thirty_days) || hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.sixty_days) || hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.ninety_days)) && (
+                  <div>
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.actionPlan}</h4>
+                    <div className="grid md:grid-cols-3 gap-3">
+                      {(["thirty_days", "sixty_days", "ninety_days"] as const).map((period) => {
+                        const val = result.career_recommendations.thirty_sixty_ninety_day_plan?.[period];
+                        if (!hasText(val)) return null;
+                        return (
+                          <div key={period} className="p-4 bg-violet-500/8 rounded-xl border border-violet-500/15">
+                            <p className="text-xs font-bold text-violet-600 dark:text-violet-400 mb-2">{period === "thirty_days" ? "30" : period === "sixty_days" ? "60" : "90"} {t.analysis.days}</p>
+                            <p className="text-xs text-foreground leading-relaxed">{val}</p>
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
-                  {hasText(result.career_recommendations.linkedin_improvements) && (
-                    <div className="p-4 rounded-xl border border-border bg-background/50">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                        LinkedIn / Portfolio
-                      </h4>
-                      <p className="text-sm text-foreground whitespace-pre-wrap">
-                        {result.career_recommendations.linkedin_improvements}
-                      </p>
-                    </div>
-                  )}
+                  </div>
+                )}
+                {hasText(result.career_recommendations.linkedin_improvements) && (
+                  <div className="p-4 rounded-xl border border-border bg-background/60">
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">LinkedIn / Portfolio</h4>
+                    <p className="text-sm text-foreground whitespace-pre-wrap">{result.career_recommendations.linkedin_improvements}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── SALARY TAB ── */}
+          {activeTab === "salary" && hasSalary && (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <DollarSign className="w-4 h-4 text-emerald-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{t.analysis.salary}</h2>
+                  <p className="text-xs text-muted-foreground">{ar ? "تقديرات سوقية بناءً على مستواك" : "Market estimates based on your level"}</p>
                 </div>
               </div>
-            )}
-
-            {/* ── SALARY ── */}
-            {hasSalary && (
-              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4 text-emerald-500" />
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">{t.analysis.salary}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar ? "تقديرات سوقية بناءً على مستواك" : "Market estimates based on your level"}
-                    </p>
-                  </div>
+              <div className="p-5 space-y-5">
+                {/* Negotiation numbers */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  {[
+                    { label: ar ? "أدنى عرض" : "Offer Low", v: result.salary_estimation.offer_range_low, color: "text-muted-foreground" },
+                    { label: ar ? "أعلى عرض" : "Offer High", v: result.salary_estimation.offer_range_high, color: "text-foreground" },
+                    { label: t.analysis.negotiationTarget, v: result.salary_estimation.negotiation_target, color: "text-violet-600 dark:text-violet-400" },
+                    { label: ar ? "رقم الفتح" : "Anchor", v: result.salary_estimation.anchor, color: "text-amber-600" },
+                    { label: ar ? "حد القبول" : "Walk-Away", v: result.salary_estimation.walk_away, color: "text-red-500" },
+                  ].map(item => (
+                    <div key={item.label} className="text-center p-4 bg-muted/30 rounded-xl border border-border">
+                      <p className="text-[10px] text-muted-foreground mb-1 font-medium">{item.label}</p>
+                      <p className={`text-base font-black tabular-nums ${item.color}`}>{item.v?.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted-foreground">SAR</p>
+                    </div>
+                  ))}
                 </div>
+                {/* Salary table */}
                 {hasArray(result.salary_estimation.salary_table) && (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto rounded-xl border border-border">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="border-b border-border">
-                          {[
-                            ar ? "الدور" : "Role",
-                            ar ? "النطاق الشهري" : "Monthly Range",
-                            ar ? "متى الحد الأعلى؟" : "Upper Range When?",
-                            ar ? "ملاحظات" : "Notes",
-                          ].map((h) => (
-                            <th key={h} className="text-start p-2 font-bold text-muted-foreground">
-                              {h}
-                            </th>
+                        <tr className="border-b border-border bg-muted/30">
+                          {[ar ? "الدور" : "Role", ar ? "النطاق الشهري" : "Monthly Range", ar ? "متى الحد الأعلى؟" : "Upper Range When?", ar ? "ملاحظات" : "Notes"].map(h => (
+                            <th key={h} className="text-start p-3 font-bold text-muted-foreground">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {result.salary_estimation.salary_table.map((row, i) => (
-                          <tr key={i} className="border-b border-border/40">
-                            <td className="p-2 font-semibold text-foreground">{row.role}</td>
-                            <td className="p-2 text-foreground">
-                              {row.monthly_range_low?.toLocaleString()} – {row.monthly_range_high?.toLocaleString()} SAR
-                            </td>
-                            <td className="p-2 text-muted-foreground">{row.when_upper_range}</td>
-                            <td className="p-2 text-muted-foreground">{row.notes}</td>
+                          <tr key={i} className="border-b border-border/40 hover:bg-muted/20 transition-colors">
+                            <td className="p-3 font-semibold text-foreground">{row.role}</td>
+                            <td className="p-3 text-foreground font-mono">{row.monthly_range_low?.toLocaleString()} – {row.monthly_range_high?.toLocaleString()} <span className="text-muted-foreground text-[10px]">SAR</span></td>
+                            <td className="p-3 text-muted-foreground">{row.when_upper_range}</td>
+                            <td className="p-3 text-muted-foreground">{row.notes}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 )}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                  {[
-                    { label: ar ? "أدنى عرض" : "Offer Low", v: result.salary_estimation.offer_range_low },
-                    { label: ar ? "أعلى عرض" : "Offer High", v: result.salary_estimation.offer_range_high },
-                    { label: t.analysis.negotiationTarget, v: result.salary_estimation.negotiation_target },
-                    { label: ar ? "رقم الفتح" : "Anchor", v: result.salary_estimation.anchor },
-                    { label: ar ? "حد القبول" : "Walk-away", v: result.salary_estimation.walk_away },
-                  ].map((item) => (
-                    <div key={item.label} className="text-center p-3 bg-muted/40 rounded-xl">
-                      <p className="text-[10px] text-muted-foreground mb-1">{item.label}</p>
-                      <p className="text-sm font-black text-foreground">
-                        {item.v?.toLocaleString()}{" "}
-                        <span className="text-[10px] text-muted-foreground font-normal">SAR</span>
-                      </p>
-                    </div>
+                <p className="text-[10px] text-muted-foreground">{ar ? "⚠️ تقديرات سوقية عامة وليست مصادر مؤكدة." : "⚠️ General market estimates, not confirmed data."}</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── RECRUITER TAB ── */}
+          {activeTab === "recruiter" && hasRecruiterAnalysis && (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-blue-500/5 to-transparent">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                  <Eye className="w-4 h-4 text-blue-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "منظور المجنّد" : "Recruiter Perspective"}</h2>
+                  <p className="text-xs text-muted-foreground">{ar ? "كيف تبدو سيرتك من زاوية مسؤول التوظيف" : "How your resume appears to a recruiter"}</p>
+                </div>
+              </div>
+              <div className="p-5 space-y-3">
+                {Object.entries(result.recruiter_analysis)
+                  .filter(([, data]) => normalizeScore(data.score) >= 0 && !isJunk(data.comment))
+                  .map(([key, data]) => (
+                    <RecruiterItem key={key}
+                      label={recruiterLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                      score={normalizeScore(data.score)} comment={safeText(data.comment)} />
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── IMPROVEMENTS TAB ── */}
+          {activeTab === "improvements" && hasQuickImprovements && (
+            <div className="rounded-2xl border border-amber-500/20 bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-5 border-b border-amber-500/15 bg-gradient-to-r from-amber-500/5 to-transparent">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "قائمة التحسينات الكاملة" : "Full Improvements List"}</h2>
+                  <p className="text-xs text-muted-foreground">{ar ? "مرتبة حسب الأولوية — ابدأ من الأعلى" : "Sorted by priority — start from top"}</p>
+                </div>
+              </div>
+              <div className="p-5 space-y-2">
+                {dedupeList(result.quick_improvements.filter(i => !isJunk(i.description)).map(i => i.description))
+                  .map((desc, i) => {
+                    const item = result.quick_improvements.find(x => x.description === desc)!;
+                    return (
+                      <QuickImprovement key={i} priority={item.priority || "medium"} description={desc}
+                        actionStep={safeText(item.action_step)}
+                        actionLabel={ar ? "تطبيق في المحرر" : "Apply in Editor"}
+                        actionTo={buildEnhanceUrl(i === 0 ? "professionalSummary" : i === 1 ? "workExperience" : "skills")} />
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* ── INTERVIEW TAB ── */}
+          {activeTab === "interview" && hasInterviewQuestions && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
+                  <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4 text-violet-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground">{ar ? "أسئلة المقابلة المتوقعة" : "Expected Interview Questions"}</h2>
+                    <p className="text-xs text-muted-foreground">{ar ? "أسئلة محتملة مع اتجاهات الإجابة" : "Likely questions with answer directions"}</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-3">
+                  {result.interview_questions.filter(q => !isJunk(q.question)).map((q, i) => (
+                    <InterviewQuestion key={i} index={i+1} question={q.question} direction={safeText(q.suggested_answer_direction)} />
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-foreground">
-                  {ar
-                    ? "⚠️ تقديرات سوقية عامة وليست مصادر مؤكدة."
-                    : "⚠️ General market estimates, not confirmed sources."}
-                </p>
               </div>
-            )}
-
-            {/* ── RECRUITER VIEW ── */}
-            {hasRecruiterAnalysis && (
-              <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-violet-500" />
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">
-                      {ar ? "منظور المجنّد" : "Recruiter Perspective"}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar
-                        ? "كيف تبدو سيرتك من زاوية مسؤول التوظيف"
-                        : "How your resume appears from a recruiter's point of view"}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {Object.entries(result.recruiter_analysis)
-                    .filter(([, data]) => normalizeScore(data.score) >= 0 && !isJunk(data.comment))
-                    .map(([key, data]) => (
-                      <RecruiterItem
-                        key={key}
-                        label={recruiterLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                        score={normalizeScore(data.score)}
-                        comment={safeText(data.comment)}
-                      />
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── QUICK IMPROVEMENTS ── */}
-            {hasQuickImprovements && (
-              <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-violet-500" />
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">{ar ? "تحسينات سريعة" : "Quick Improvements"}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar ? "خطوات عملية سريعة لرفع جودة السيرة" : "Practical quick wins to improve resume quality"}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {dedupeList(result.quick_improvements.filter((i) => !isJunk(i.description)).map((i) => i.description))
-                    .slice(0, 5)
-                    .map((desc, i) => {
-                      const item = result.quick_improvements.find((x) => x.description === desc)!;
-                      return (
-                        <QuickImprovement
-                          key={i}
-                          priority={item.priority || "medium"}
-                          description={desc}
-                          actionStep={safeText(item.action_step)}
-                          actionLabel={ar ? "تطبيق في المحرر" : "Apply in Editor"}
-                          actionTo={buildEnhanceUrl(
-                            i === 0 ? "professionalSummary" : i === 1 ? "workExperience" : "skills",
-                          )}
-                        />
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-
-            {/* ── INTERVIEW QUESTIONS ── */}
-            {hasInterviewQuestions && (
-              <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-violet-500" />
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">
-                      {ar ? "أسئلة المقابلة المتوقعة" : "Interview Questions"}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {ar ? "أسئلة محتملة مع اتجاهات للإجابة" : "Likely questions with answer directions"}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {result.interview_questions
-                    .filter((q) => !isJunk(q.question) && typeof q.question === "string")
-                    .slice(0, 10)
-                    .map((q, i) => (
-                      <InterviewQuestion
-                        key={i}
-                        index={i + 1}
-                        question={q.question}
-                        direction={safeText(q.suggested_answer_direction)}
-                      />
-                    ))}
-                </div>
-                <div className="flex items-center justify-between gap-3 p-4 rounded-xl border-2 border-violet-500/20 bg-violet-500/5">
-                  <div>
-                    <p className="text-sm font-bold text-foreground">
-                      {ar ? "تدرّب مع المحاور الذكي" : "Practice with AI Avatar"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {ar ? "أجب بصوتك واحصل على تقييم فوري" : "Answer by voice and get instant evaluation"}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    asChild
-                    className="rounded-xl gap-1.5 bg-violet-600 hover:bg-violet-700 text-white flex-shrink-0"
-                  >
-                    <Link
-                      to={`/dashboard/interview-avatar?analysis_id=${searchParams.get("id") || ""}&job_title=${encodeURIComponent(result.target_role || "")}&questions=${encodeURIComponent(JSON.stringify(result.interview_questions.filter((q) => !isJunk(q.question) && typeof q.question === "string").slice(0, 10)))}`}
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      {ar ? "ابدأ المقابلة" : "Start Interview"}
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* ── BOTTOM CTA ── */}
-            <div className="rounded-2xl border-2 border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-indigo-500/5 p-6 text-center space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-violet-500/15 flex items-center justify-center mx-auto">
-                <Sparkles className="w-6 h-6 text-violet-500" />
-              </div>
-              <h3 className="text-lg font-extrabold text-foreground">
-                {ar ? "جاهز لتحسين سيرتك؟" : "Ready to improve your resume?"}
-              </h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                {ar
-                  ? "انتقل الآن للمحرر الذكي وابدأ من الأقسام الأضعف."
-                  : "Open the smart editor and start with your weakest sections."}
-              </p>
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                <Button
-                  size="lg"
-                  asChild
-                  className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg shadow-violet-500/20 gap-2"
-                >
-                  <Link to={buildEnhanceUrl(priorityFixes[0]?.focus || "professionalSummary")}>
-                    <Sparkles className="w-4 h-4" />
-                    {ar ? "تحسين وإعادة كتابة السيرة" : "Improve Resume"}
-                  </Link>
-                </Button>
-                <Button
-                  size="lg"
-                  asChild
-                  className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 gap-2"
-                >
-                  <Link to={`/job-search${result?.target_role ? `?q=${encodeURIComponent(result.target_role)}` : ""}`}>
-                    <Briefcase className="w-4 h-4" />
-                    {ar ? "ابحث عن وظائف مطابقة" : "Find Matching Jobs"}
-                  </Link>
-                </Button>
-                <Button size="lg" variant="outline" asChild className="rounded-xl gap-2">
-                  <Link to="/dashboard">
-                    <ArrowLeft className={`w-4 h-4 ${ar ? "rotate-180" : ""}`} />
-                    {ar ? "لوحة التحكم" : "Dashboard"}
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="corrections" className="mt-0 space-y-5">
-            <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
-              <div>
-                <h3 className="text-lg font-bold text-foreground">
-                  {ar ? "التصحيحات والحقول القابلة للمراجعة" : "Corrections and validation"}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {ar
-                    ? "راجع البيانات الأساسية قبل إنشاء السيرة المحسنة. هذه المرحلة تعرض البيانات المستخرجة فقط بدون إعادة استخراج."
-                    : "Review the extracted core fields before generating the enhanced resume. This uses the current stored resume only."}
-                </p>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{ar ? "الاسم الكامل" : "Full name"}</label>
-                  <Input
-                    value={correctionsDraft.fullName}
-                    onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, fullName: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{ar ? "المسمى المستهدف" : "Target title"}</label>
-                  <Input
-                    value={correctionsDraft.title}
-                    onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, title: e.target.value }))}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{ar ? "معلومات التواصل" : "Contact info"}</label>
-                <Textarea
-                  rows={5}
-                  value={correctionsDraft.contact}
-                  onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, contact: e.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{ar ? "الملخص المهني" : "Professional summary"}</label>
-                <Textarea
-                  rows={8}
-                  value={correctionsDraft.summary}
-                  onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, summary: e.target.value }))}
-                />
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-xl border border-border bg-muted/30 p-4">
-                  <h4 className="text-sm font-semibold mb-2">{ar ? "المعلومات الناقصة" : "Missing information"}</h4>
-                  <ul className="space-y-1 text-sm text-muted-foreground">
-                    {(
-                      [
-                        !correctionsDraft.fullName ? (ar ? "الاسم الكامل" : "Full name") : null,
-                        !correctionsDraft.title ? (ar ? "المسمى المستهدف" : "Target title") : null,
-                        !correctionsDraft.contact ? (ar ? "بيانات التواصل" : "Contact details") : null,
-                        !correctionsDraft.summary ? (ar ? "الملخص المهني" : "Professional summary") : null,
-                      ].filter(Boolean) as string[]
-                    ).map((item) => (
-                      <li key={item}>• {item}</li>
-                    ))}
-                    {[
-                      correctionsDraft.fullName,
-                      correctionsDraft.title,
-                      correctionsDraft.contact,
-                      correctionsDraft.summary,
-                    ].every(Boolean) ? (
-                      <li>• {ar ? "لا توجد نواقص أساسية في هذه الحقول." : "No critical gaps in these fields."}</li>
-                    ) : null}
-                  </ul>
-                </div>
-                <div className="rounded-xl border border-border bg-muted/30 p-4">
-                  <h4 className="text-sm font-semibold mb-2">{ar ? "الخطوة التالية" : "Next step"}</h4>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {ar
-                      ? "بعد مراجعة هذه البيانات، انتقل إلى تبويب السيرة المحسنة لإنشاء نسخة ATS-friendly كاملة داخل نفس الصفحة."
-                      : "After reviewing these fields, move to the Enhanced Resume tab to generate a full ATS-friendly rewrite inside the same page."}
-                  </p>
-                  <Button onClick={() => setActiveTab("enhanced")} className="rounded-xl gap-2">
-                    <Wand2 className="w-4 h-4" />
-                    {ar ? "الانتقال إلى السيرة المحسنة" : "Go to Enhanced Resume"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="enhanced" className="mt-0 space-y-5">
-            <RewriteSummaryCard
-              resume={storedResumeData}
-              analysis={{
-                overall_score: result?.ats_score || 0,
-                full_analysis: result as unknown as Record<string, unknown>,
-              }}
-              improvementSummary={priorityFixes.slice(0, 4).map((item) => item.title)}
-            />
-
-            <RewriteIssuesCard
-              analysis={{
-                weaknesses: result?.executive_summary?.main_risks || [],
-                suggestions: result?.quick_improvements?.map((item) => item.action_step || item.description) || [],
-                full_analysis: result as unknown as Record<string, unknown>,
-              }}
-            />
-
-            <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 border-violet-500/20 bg-violet-500/5">
                 <div>
-                  <h3 className="text-lg font-bold text-foreground">
-                    {ar ? "السيرة الذاتية المحسنة / Enhanced Resume" : "Enhanced Resume / السيرة الذاتية المحسنة"}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {ar
-                      ? "النسخة المعروضة تجمع السيرة الحالية مع نتائج التحليل في مخرج نهائي واضح. التكلفة: 5 نقاط. / The final version combines your current resume with the analysis results. Cost: 5 points."
-                      : "The final version combines your current resume with the analysis results. Cost: 5 points. / النسخة المعروضة تجمع السيرة الحالية مع نتائج التحليل في مخرج نهائي واضح."}
-                  </p>
+                  <p className="text-sm font-bold text-foreground">{ar ? "تدرّب مع المحاور الذكي" : "Practice with AI Avatar"}</p>
+                  <p className="text-xs text-muted-foreground">{ar ? "أجب بصوتك واحصل على تقييم فوري" : "Answer by voice and get instant evaluation"}</p>
                 </div>
-                <Button
-                  onClick={handleGenerateEnhancedResume}
-                  disabled={!storedResumeData || !result || rewriteLoading}
-                  className="rounded-xl gap-2"
-                >
-                  {rewriteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                  {rewriteLoading
-                    ? ar
-                      ? "جارٍ تجهيز النسخة / Preparing"
-                      : "Preparing / جارٍ تجهيز النسخة"
-                    : ar
-                      ? "تجهيز النسخة النهائية / Generate Final Resume"
-                      : "Generate Final Resume / تجهيز النسخة النهائية"}
+                <Button size="sm" asChild className="rounded-xl gap-1.5 bg-violet-600 hover:bg-violet-700 text-white flex-shrink-0">
+                  <Link to={`/dashboard/interview-avatar?analysis_id=${searchParams.get("id") || ""}&job_title=${encodeURIComponent(result.target_role || "")}&questions=${encodeURIComponent(JSON.stringify(result.interview_questions.filter(q => !isJunk(q.question)).slice(0, 10)))}`}>
+                    <MessageSquare className="w-3.5 h-3.5" />{ar ? "ابدأ المقابلة" : "Start Interview"}
+                  </Link>
                 </Button>
               </div>
-
-              {rewriteError ? <p className="text-sm text-red-500">{rewriteError}</p> : null}
             </div>
+          )}
 
-            {rewriteResult?.rewritten_resume ? (
-              <RewriteReview
-                originalText={storedResumeData?.raw_resume_text || ""}
-                improvedText={rewriteResult.rewritten_resume}
-                summary={rewriteResult.improvement_summary}
-              />
-            ) : null}
-          </TabsContent>
-        </Tabs>
+          {/* ── ENHANCED CV TAB ── */}
+          {activeTab === "enhanced" && (
+            <div className="space-y-5">
+              <RewriteSummaryCard resume={storedResumeData} analysis={{ overall_score: result?.ats_score || 0, full_analysis: result as unknown as Record<string, unknown> }} improvementSummary={priorityFixes.slice(0, 4).map(item => item.title)} />
+              <RewriteIssuesCard analysis={{ weaknesses: result?.executive_summary?.main_risks || [], suggestions: result?.quick_improvements?.map(item => item.action_step || item.description) || [], full_analysis: result as unknown as Record<string, unknown> }} />
+              {/* Corrections */}
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-3 p-5 border-b border-border/60">
+                  <CheckCircle2 className="w-4 h-4 text-violet-500" />
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "مراجعة البيانات المستخرجة" : "Review Extracted Data"}</h2>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "الاسم الكامل" : "Full Name"}</label>
+                      <Input value={correctionsDraft.fullName} onChange={e => setCorrectionsDraft(prev => ({ ...prev, fullName: e.target.value }))} className="rounded-xl" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "المسمى المستهدف" : "Target Title"}</label>
+                      <Input value={correctionsDraft.title} onChange={e => setCorrectionsDraft(prev => ({ ...prev, title: e.target.value }))} className="rounded-xl" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "معلومات التواصل" : "Contact Info"}</label>
+                    <Textarea rows={3} value={correctionsDraft.contact} onChange={e => setCorrectionsDraft(prev => ({ ...prev, contact: e.target.value }))} className="rounded-xl" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "الملخص المهني" : "Professional Summary"}</label>
+                    <Textarea rows={5} value={correctionsDraft.summary} onChange={e => setCorrectionsDraft(prev => ({ ...prev, summary: e.target.value }))} className="rounded-xl" />
+                  </div>
+                </div>
+              </div>
+              {/* Generate button */}
+              <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-indigo-500/5 p-6">
+                <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">{ar ? "السيرة الذاتية المحسنة" : "Enhanced Resume"}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">{ar ? "نسخة ATS-friendly كاملة بناءً على تحليلك. التكلفة: 5 نقاط." : "Full ATS-friendly rewrite based on your analysis. Cost: 5 points."}</p>
+                  </div>
+                  <Button onClick={handleGenerateEnhancedResume} disabled={!storedResumeData || !result || rewriteLoading} size="lg" className="rounded-xl gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg shadow-violet-500/20 flex-shrink-0">
+                    {rewriteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                    {rewriteLoading ? (ar ? "جارٍ الإنشاء..." : "Generating...") : (ar ? "إنشاء السيرة المحسنة" : "Generate Enhanced Resume")}
+                  </Button>
+                </div>
+                {rewriteError && <p className="text-sm text-red-500 mt-3">{rewriteError}</p>}
+              </div>
+              {rewriteResult?.rewritten_resume && (
+                <RewriteReview originalText={storedResumeData?.raw_resume_text || ""} improvedText={rewriteResult.rewritten_resume} summary={rewriteResult.improvement_summary} />
+              )}
+            </div>
+          )}
+
+          {/* ── EMPTY STATES for tabs with no data ── */}
+          {activeTab === "career" && !hasCareer && (
+            <div className="text-center py-16 space-y-3">
+              <Briefcase className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد توصيات مهنية في هذا التحليل." : "No career recommendations in this analysis."}</p>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
+            </div>
+          )}
+          {activeTab === "salary" && !hasSalary && (
+            <div className="text-center py-16 space-y-3">
+              <DollarSign className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات رواتب في هذا التحليل." : "No salary data in this analysis."}</p>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
+            </div>
+          )}
+          {activeTab === "recruiter" && !hasRecruiterAnalysis && (
+            <div className="text-center py-16 space-y-3">
+              <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل المجند." : "No recruiter analysis data."}</p>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
+            </div>
+          )}
+          {activeTab === "improvements" && !hasQuickImprovements && (
+            <div className="text-center py-16 space-y-3">
+              <Sparkles className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد تحسينات محددة." : "No specific improvements found."}</p>
+            </div>
+          )}
+          {activeTab === "interview" && !hasInterviewQuestions && (
+            <div className="text-center py-16 space-y-3">
+              <MessageSquare className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد أسئلة مقابلة في هذا التحليل." : "No interview questions in this analysis."}</p>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
+            </div>
+          )}
+
+        </div>
       </main>
-      <InsufficientPointsDialog
-        open={showInsufficientPoints}
-        onClose={() => setShowInsufficientPoints(false)}
-        ar={ar}
-      />
+
+      <InsufficientPointsDialog open={showInsufficientPoints} onClose={() => setShowInsufficientPoints(false)} ar={ar} />
     </div>
   );
 };
 
 export default Analysis;
-
-

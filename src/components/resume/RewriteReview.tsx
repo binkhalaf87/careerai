@@ -93,7 +93,7 @@ export default function RewriteReview({ originalText = "", improvedText = "", su
       <textarea
         readOnly
         value={activeText}
-        className="min-h-[420px] w-full rounded-xl border border-border bg-background p-4 text-sm leading-7 outline-none"
+        className="min-h-[420px] w-full max-w-none rounded-xl border border-border bg-background p-4 text-left [direction:ltr] whitespace-pre-wrap break-words leading-6 outline-none"
       />
     </div>
   );
