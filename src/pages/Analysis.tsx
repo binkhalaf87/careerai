@@ -69,21 +69,6 @@ interface FullAnalysis {
   candidate_name: string;
   ats_score: number;
   section_scores: Record<string, number>;
-  strengths?: string[];
-  weaknesses?: string[];
-  missing_keywords?: string[];
-  issues?: { type: "critical" | "warning"; message: string }[];
-  improvements?: { title: string; action: string; priority: "high" | "medium" | "low" }[];
-  normalized_resume?: {
-    name: string | null;
-    job_title: string | null;
-    summary: string | null;
-    skills: string[];
-    experience: string[];
-    education: string[];
-    certifications: string[];
-    raw_text: string;
-  };
   executive_summary: {
     candidate_level: string;
     summary_paragraphs: string;
@@ -149,12 +134,6 @@ const EMPTY_ANALYSIS: FullAnalysis = {
   candidate_name: "",
   ats_score: 0,
   section_scores: {},
-  strengths: [],
-  weaknesses: [],
-  missing_keywords: [],
-  issues: [],
-  improvements: [],
-  normalized_resume: undefined,
   executive_summary: {
     candidate_level: "",
     summary_paragraphs: "",
@@ -224,13 +203,13 @@ const candidateLevelFromScore = (score: number, lang: "ar" | "en") => {
 const buildDeterministicAnalysis = (resume: AtsStructuredResume, language: "ar" | "en"): FullAnalysis => {
   const ats = analyzeResumeATS(resume);
   const sectionScores: Record<string, number> = {
-    resume_formatting: ats.breakdown.formatting,
+    resume_formatting: ats.breakdown.structure,
     keyword_optimization: ats.breakdown.keywords,
-    experience_quality: ats.breakdown.experience,
+    experience_quality: ats.breakdown.impact,
     career_progression: ats.breakdown.completeness,
-    skills_relevance: ats.breakdown.skills,
-    education_strength: ats.breakdown.education,
-    contact_information_quality: ats.breakdown.formatting,
+    skills_relevance: ats.breakdown.keywords,
+    education_strength: ats.breakdown.completeness,
+    contact_information_quality: ats.breakdown.structure,
   };
   const mkBreak = (score: number, csAr: string, csEn: string, pAr: string, pEn: string, rAr: string, rEn: string) => ({
     score,
@@ -303,55 +282,45 @@ const buildDeterministicAnalysis = (resume: AtsStructuredResume, language: "ar" 
       "Verify contact details and remove malformed formatting.",
     ),
   };
-  const topStrengths = ats.strengths.length
-    ? ats.strengths
-    : [
-        ats.breakdown.structure >= 70
-          ? language === "ar"
-            ? "بنية السيرة واضحة وقابلة للقراءة."
-            : "The resume structure is clear and readable."
-          : "",
-        ats.breakdown.keywords >= 60
-          ? language === "ar"
-            ? "توجد كلمات مفتاحية مقبولة مرتبطة بالدور."
-            : "There is acceptable role-relevant keyword coverage."
-          : "",
-        ats.breakdown.impact >= 70
-          ? language === "ar"
-            ? "الخبرة تحتوي على أثر قابل للإبراز."
-            : "Work experience includes impact that can be highlighted."
-          : "",
-      ].filter(Boolean);
-  const mainRisks = ats.weaknesses.length ? ats.weaknesses : ats.issues.map((i) => i.title);
+  const topStrengths = [
+    ats.breakdown.structure >= 70
+      ? language === "ar"
+        ? "بنية السيرة واضحة وقابلة للقراءة."
+        : "The resume structure is clear and readable."
+      : "",
+    ats.breakdown.keywords >= 60
+      ? language === "ar"
+        ? "توجد كلمات مفتاحية مقبولة مرتبطة بالدور."
+        : "There is acceptable role-relevant keyword coverage."
+      : "",
+    ats.breakdown.impact >= 70
+      ? language === "ar"
+        ? "الخبرة تحتوي على أثر قابل للإبراز."
+        : "Work experience includes impact that can be highlighted."
+      : "",
+  ].filter(Boolean);
+  const mainRisks = ats.issues.map((i) => i.title);
   return {
     ...EMPTY_ANALYSIS,
     target_role: resume.jobTitle || "",
     candidate_name: resume.fullName || "",
     ats_score: ats.overallScore,
     section_scores: sectionScores,
-    strengths: topStrengths,
-    weaknesses: mainRisks,
-    missing_keywords: ats.missingKeywords,
-    issues: ats.issues.map((issue) => ({
-      type: issue.severity === "high" ? "critical" : "warning",
-      message: issue.title,
-    })),
-    improvements: ats.improvements,
     executive_summary: {
       candidate_level: candidateLevelFromScore(ats.overallScore, language),
       summary_paragraphs:
         language === "ar"
-          ? `تم إنشاء هذا التقييم عبر محرك TALENTRY الداخلي. الدرجة الحالية ${ats.overallScore}/100، مع احتساب اكتمال الأقسام والمهارات والخبرة والإنجازات والكلمات المفتاحية وقابلية القراءة.`
-          : `This score was generated using the TALENTRY internal ATS engine and weighted across section completeness, skills, experience, achievements, keyword coverage, and readability. Current score: ${ats.overallScore}/100.`,
+          ? `تم إنشاء هذا التقييم عبر محرك TALENTRY الداخلي. الدرجة الحالية ${ats.overallScore}/100.`
+          : `This score was generated using the TALENTRY internal ATS engine. Current score: ${ats.overallScore}/100.`,
       best_fit_roles: resume.jobTitle ? [resume.jobTitle] : [],
       top_strengths: topStrengths,
       main_risks: mainRisks,
     },
     ats_breakdown: atsBreakdown,
-    quick_improvements: ats.improvements.map((issue) => ({
-      priority: issue.priority,
+    quick_improvements: ats.issues.map((issue) => ({
+      priority: issue.severity,
       description: issue.title,
-      action_step: issue.action,
+      action_step: issue.suggestion,
     })),
   };
 };
@@ -383,11 +352,6 @@ const mergeWithDeterministicAnalysis = (
         ? existing.executive_summary.main_risks
         : deterministic.executive_summary.main_risks) || [],
   },
-  strengths: deterministic.strengths?.length ? deterministic.strengths : existing?.strengths || [],
-  weaknesses: deterministic.weaknesses?.length ? deterministic.weaknesses : existing?.weaknesses || [],
-  missing_keywords: deterministic.missing_keywords?.length ? deterministic.missing_keywords : existing?.missing_keywords || [],
-  improvements: deterministic.improvements?.length ? deterministic.improvements : existing?.improvements || [],
-  issues: deterministic.issues?.length ? deterministic.issues : existing?.issues || [],
   quick_improvements: deterministic.quick_improvements.length
     ? deterministic.quick_improvements
     : existing?.quick_improvements || [],
@@ -607,13 +571,7 @@ const Analysis = () => {
         ),
       );
 
-      // Normalize career_recommendations
-      const rawCareer = payload.career_recommendations || {};
-
-      // Normalize quick_improvements and ATS detail arrays
-      const rawStrengths = payload.strengths || rawExec.top_strengths || rawExec.strengths || existing.strengths || [];
-      const rawWeaknesses = payload.weaknesses || rawExec.main_risks || rawExec.weaknesses || existing.weaknesses || [];
-      const rawMissingKeywords = payload.missing_keywords || payload.missingKeywords || rawCareer.skills_to_improve || [];
+      // Normalize quick_improvements
       const rawImprovements = payload.quick_improvements || payload.improvements || payload.priority_fixes || [];
       const quick_improvements: FullAnalysis["quick_improvements"] = Array.isArray(rawImprovements)
         ? rawImprovements
@@ -636,11 +594,6 @@ const Analysis = () => {
               action_step: "",
             }))
             .filter((x) => !isJunk(x.description));
-      const improvements = quick_improvements.map((item) => ({
-        title: item.description,
-        action: item.action_step || item.description,
-        priority: (["high", "medium", "low"].includes(item.priority) ? item.priority : "medium") as "high" | "medium" | "low",
-      }));
 
       // Normalize interview_questions
       const rawQuestions = payload.interview_questions || [];
@@ -685,6 +638,7 @@ const Analysis = () => {
       }
 
       // Normalize career_recommendations
+      const rawCareer = payload.career_recommendations || {};
       const top_roles = Array.isArray(rawCareer.top_roles)
         ? rawCareer.top_roles
             .map((r: unknown) => {
@@ -707,10 +661,6 @@ const Analysis = () => {
         candidate_name: safeText(payload.candidate_name || existing.candidate_name || ""),
         ats_score,
         section_scores: Object.keys(section_scores).length > 0 ? section_scores : EMPTY_ANALYSIS.section_scores,
-        strengths: dedupeList(safeList(rawStrengths)),
-        weaknesses: dedupeList(safeList(rawWeaknesses)),
-        missing_keywords: dedupeList(safeList(rawMissingKeywords)),
-        improvements,
         executive_summary: {
           candidate_level: safeText(rawExec.candidate_level || ""),
           summary_paragraphs: cleanDisplayText(summaryText),
@@ -1258,23 +1208,6 @@ const Analysis = () => {
     };
   }, [result, language]);
 
-
-  const analysisStrengths = useMemo(
-    () => dedupeList(safeList(result?.strengths || result?.executive_summary?.top_strengths || [])).filter((item) => hasText(item) && !isJunk(item)).slice(0, 6),
-    [result],
-  );
-  const analysisWeaknesses = useMemo(
-    () => dedupeList(safeList(result?.weaknesses || result?.executive_summary?.main_risks || [])).filter((item) => hasText(item) && !isJunk(item)).slice(0, 6),
-    [result],
-  );
-  const analysisMissingKeywords = useMemo(
-    () => dedupeList(safeList(result?.missing_keywords || result?.career_recommendations?.skills_to_improve || [])).filter((item) => hasText(item) && !isJunk(item)).slice(0, 12),
-    [result],
-  );
-  const analysisImprovements = useMemo(
-    () => (result?.improvements || []).filter((item) => hasText(item.title) || hasText(item.action)).slice(0, 8),
-    [result],
-  );
   const hasBreakdown = hasObject(result?.ats_breakdown || null);
   const hasCareer =
     !!result?.career_recommendations &&
@@ -1506,11 +1439,7 @@ const Analysis = () => {
     { id: "ats",          labelAr: "تفاصيل ATS", labelEn: "ATS Details", icon: ListChecks },
     { id: "career",       labelAr: "التوصيات", labelEn: "Career",   icon: Briefcase },
     { id: "salary",       labelAr: "الرواتب", labelEn: "Salary",   icon: DollarSign },
-<<<<<<< HEAD
     { id: "recruiter",    labelAr: "نظرة المجند", labelEn: "Recruiter", icon: Eye },
-=======
-    { id: "recruiter",    labelAr: "نظرة مسئول التوظيف", labelEn: "Recruiter", icon: Eye },
->>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
     { id: "improvements", labelAr: "التحسينات", labelEn: "Fixes",  icon: Zap },
     { id: "interview",    labelAr: "المقابلة", labelEn: "Interview", icon: MessageSquare },
     { id: "enhanced",     labelAr: "السيرة المحسنة", labelEn: "Enhanced CV", icon: Wand2 },
@@ -1749,101 +1678,6 @@ const Analysis = () => {
                 </div>
               )}
 
-<<<<<<< HEAD
-              {(analysisStrengths.length > 0 || analysisWeaknesses.length > 0 || analysisMissingKeywords.length > 0 || analysisImprovements.length > 0) && (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-emerald-500/20 bg-card p-5 space-y-3 w-full max-w-none">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-emerald-500" />
-                      <h3 className="text-sm font-bold text-foreground">{ar ? "نقاط القوة" : "Strengths"}</h3>
-                    </div>
-                    <ul className="space-y-2">
-                      {analysisStrengths.map((item, index) => (
-                        <li key={`strength-${index}`} className="text-sm leading-6 text-foreground bg-emerald-500/5 border border-emerald-500/10 rounded-xl px-3 py-2">{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="rounded-2xl border border-red-500/20 bg-card p-5 space-y-3 w-full max-w-none">
-                    <div className="flex items-center gap-2">
-                      <TrendingDown className="w-4 h-4 text-red-500" />
-                      <h3 className="text-sm font-bold text-foreground">{ar ? "نقاط الضعف" : "Weaknesses"}</h3>
-                    </div>
-                    <ul className="space-y-2">
-                      {analysisWeaknesses.map((item, index) => (
-                        <li key={`weakness-${index}`} className="text-sm leading-6 text-foreground bg-red-500/5 border border-red-500/10 rounded-xl px-3 py-2">{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="rounded-2xl border border-amber-500/20 bg-card p-5 space-y-3 w-full max-w-none lg:col-span-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <ListChecks className="w-4 h-4 text-amber-500" />
-                      <h3 className="text-sm font-bold text-foreground">{ar ? "الكلمات المفتاحية المفقودة" : "Missing Keywords"}</h3>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {analysisMissingKeywords.map((item, index) => (
-                        <Badge key={`keyword-${index}`} variant="secondary" className="px-3 py-1 text-xs bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">{item}</Badge>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-violet-500/20 bg-card p-5 space-y-3 w-full max-w-none lg:col-span-2">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-violet-500" />
-                      <h3 className="text-sm font-bold text-foreground">{ar ? "التحسينات المقترحة" : "Improvements"}</h3>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {analysisImprovements.map((item, index) => (
-                        <div key={`improvement-${index}`} className="rounded-xl border border-border bg-background/60 p-4 space-y-2 w-full max-w-none">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-semibold text-foreground leading-6">{item.title}</p>
-                            <Badge variant="secondary" className="text-[10px] uppercase">{item.priority}</Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground leading-6">{item.action}</p>
-                        </div>
-                      ))}
-                    </div>
-=======
-              {/* Priority Fixes */}
-              {hasArray(priorityFixes) && (
-                <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 overflow-hidden">
-                  <div className="flex items-center justify-between p-5 border-b border-amber-500/15">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
-                        <Zap className="w-4 h-4 text-amber-500" />
-                      </div>
-                      <div>
-                        <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                          {ar ? "أولويات التحسين الفوري" : "Immediate Priority Fixes"}
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">{priorityFixes.length}</span>
-                        </h2>
-                        <p className="text-xs text-muted-foreground">{ar ? "ابدأ بهذه النقاط لأكبر تأثير على نتيجة ATS" : "Start here for maximum ATS score impact"}</p>
-                      </div>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => setActiveTab("improvements" as any)} className="text-xs rounded-lg gap-1">
-                      {ar ? "عرض الكل" : "View all"}<ChevronRight className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  <div className="p-5 grid md:grid-cols-3 gap-3">
-                    {priorityFixes.map((item) => (
-                      <Link key={item.id} to={buildEnhanceUrl(item.focus)} className="group flex flex-col gap-2 p-3.5 rounded-xl border-2 border-border hover:border-violet-400 bg-background/70 hover:bg-violet-500/5 transition-all">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold w-fit ${item.priority === "high" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}`}>
-                          {item.priority === "high" ? (ar ? "عالية" : "High") : ar ? "متوسطة" : "Medium"}
-                        </span>
-                        <p className="text-xs font-semibold text-foreground leading-relaxed">{item.title}</p>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed flex-1">{item.action}</p>
-                        <span className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
-                          {ar ? "إصلاح في المحرر" : "Fix in Editor"}<ChevronRight className="w-3 h-3" />
-                        </span>
-                      </Link>
-                    ))}
->>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
-                  </div>
-                </div>
-              )}
-
-<<<<<<< HEAD
               {/* Priority Fixes */}
               {hasArray(priorityFixes) && (
                 <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 overflow-hidden">
@@ -1881,8 +1715,6 @@ const Analysis = () => {
                 </div>
               )}
 
-=======
->>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
               {/* Before / After preview */}
               {hasText(transformationPreview.before) && hasText(transformationPreview.after) && transformationPreview.before !== transformationPreview.after && (
                 <div className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -2258,11 +2090,7 @@ const Analysis = () => {
           {activeTab === "recruiter" && !hasRecruiterAnalysis && (
             <div className="text-center py-16 space-y-3">
               <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto" />
-<<<<<<< HEAD
               <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل المجند." : "No recruiter analysis data."}</p>
-=======
-              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل مسئول التوظيف." : "No recruiter analysis data."}</p>
->>>>>>> 9a3383508a7a6cc111068ea9c1e600de482605ed
               <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
             </div>
           )}
