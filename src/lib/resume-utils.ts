@@ -560,7 +560,8 @@ export function isLikelyWebsite(line: string): boolean {
 }
 
 export function isLikelyLocation(line: string): boolean {
-  return /(riyadh|jeddah|dammam|ksa|saudi|location|address|الرياض|جدة|الدمام|السعودية|العنوان|الموقع|cairo|alexandria|dubai|abu dhabi|القاهرة|الإسكندرية|دبي|أبوظبي|amman|beirut|doha|muscat|kuwait|manama|عمان|بيروت|الدوحة|مسقط|الكويت|المنامة)/i.test(\n    line,
+  return /(riyadh|jeddah|dammam|ksa|saudi|location|address|الرياض|جدة|الدمام|السعودية|العنوان|الموقع|cairo|alexandria|dubai|abu dhabi|القاهرة|الإسكندرية|دبي|أبوظبي|amman|beirut|doha|muscat|kuwait|manama|عمان|بيروت|الدوحة|مسقط|الكويت|المنامة)/i.test(
+    line,
   );
 }
 
@@ -575,7 +576,8 @@ export function isLikelyContactLine(line: string): boolean {
 }
 
 export function looksLikeDateRange(line: string): boolean {
-  return /\b(19|20)\d{2}\b|present|current|till now|to date|ongoing|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر|حتى الآن|حاليا|حالياً|الآن/i.test(\n    line,
+  return /\b(19|20)\d{2}\b|present|current|till now|to date|ongoing|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر|حتى الآن|حاليا|حالياً|الآن/i.test(
+    line,
   );
 }
 
@@ -585,10 +587,12 @@ export function looksLikeRoleHeader(line: string): boolean {
   const hasDate = looksLikeDateRange(t);
   const hasSeparator = /[|–—]/.test(t) || /\t/.test(t);
   const hasRoleWords =
-    /(manager|engineer|specialist|supervisor|analyst|consultant|developer|officer|lead|administrator|coordinator|trainer|director|architect|designer|accountant|teacher|nurse|doctor|technician|intern|assistant|associate|executive|representative|مدير|مهندس|أخصائي|مشرف|محلل|استشاري|مطور|مسؤول|قائد|منسق|مدرب|محاسب|معلم|ممرض|طبيب|فني|متدرب|مساعد)/i.test(\n      t,
+    /(manager|engineer|specialist|supervisor|analyst|consultant|developer|officer|lead|administrator|coordinator|trainer|director|architect|designer|accountant|teacher|nurse|doctor|technician|intern|assistant|associate|executive|representative|مدير|مهندس|أخصائي|مشرف|محلل|استشاري|مطور|مسؤول|قائد|منسق|مدرب|محاسب|معلم|ممرض|طبيب|فني|متدرب|مساعد)/i.test(
+      t,
     );
   const hasCompanyWords =
-    /(company|corp|inc|llc|ltd|group|hospital|ministry|university|school|agency|solutions|network|technologies|systems|consulting|services|تقنية|شركة|مؤسسة|مجموعة|مستشفى|وزارة|جامعة|معهد)/i.test(\n      t,
+    /(company|corp|inc|llc|ltd|group|hospital|ministry|university|school|agency|solutions|network|technologies|systems|consulting|services|تقنية|شركة|مؤسسة|مجموعة|مستشفى|وزارة|جامعة|معهد)/i.test(
+      t,
     );
 
   if (hasDate && (hasRoleWords || hasCompanyWords)) return true;
@@ -616,7 +620,8 @@ export function isProbablyJobTitle(line: string): boolean {
   if (!t || t.length < 3 || t.length > 80) return false;
   if (isLikelyContactLine(t)) return false;
   if (t.split(/\s+/).length > 8) return false;
-  return /(manager|engineer|specialist|supervisor|analyst|consultant|developer|lead|architect|officer|designer|accountant|teacher|nurse|doctor|technician|administrator|coordinator|senior|junior|executive|intern|assistant|associate|representative|مدير|مهندس|أخصائي|مشرف|محلل|استشاري|مطور|قائد|مسؤول|محاسب|معلم|ممرض|طبيب|فني|متدرب|مساعد)/i.test(\n    t,
+  return /(manager|engineer|specialist|supervisor|analyst|consultant|developer|lead|architect|officer|designer|accountant|teacher|nurse|doctor|technician|administrator|coordinator|senior|junior|executive|intern|assistant|associate|representative|مدير|مهندس|أخصائي|مشرف|محلل|استشاري|مطور|قائد|مسؤول|محاسب|معلم|ممرض|طبيب|فني|متدرب|مساعد)/i.test(
+    t,
   );
 }
 
@@ -710,7 +715,8 @@ function lineMatchesSection(line: string, section: keyof StructuredResume): bool
       !/(bachelor|master|diploma|phd|degree|university|college|بكالوريوس|ماجستير|دبلوم|جامعة|كلية)/i.test(t)
     ) {
       if (
-        /(excel|power bi|sql|python|react|javascript|java|oracle|aws|network|communication|leadership|إكسل|برمجة)/i.test(\n          t,
+        /(excel|power bi|sql|python|react|javascript|java|oracle|aws|network|communication|leadership|إكسل|برمجة)/i.test(
+          t,
         )
       )
         return false;
@@ -804,7 +810,8 @@ function looksLikeJobTitleLoose(line: string): boolean {
   if (looksLikeContactLoose(line)) return false;
   if (detectSectionHeading(line)) return false;
 
-  return /engineer|manager|specialist|supervisor|analyst|developer|consultant|officer|lead|director|support|technician|coordinator|assistant|مهندس|مدير|أخصائي|مشرف|محلل|مطور|استشاري|فني|منسق|مساعد/i.test(\n    line,
+  return /engineer|manager|specialist|supervisor|analyst|developer|consultant|officer|lead|director|support|technician|coordinator|assistant|مهندس|مدير|أخصائي|مشرف|محلل|مطور|استشاري|فني|منسق|مساعد/i.test(
+    line,
   );
 }
 
@@ -1440,7 +1447,8 @@ export function parseResumeTextFallback(text: string): StructuredResume {
       lines.filter((l) => {
         if (contactSet.has(l.toLowerCase().trim())) return false;
         if (looksLikeRoleHeader(l)) return false;
-        return /(excel|power bi|sql|python|react|typescript|javascript|java|oracle|aws|azure|network|communication|leadership|problem solving|docker|kubernetes|git|agile|scrum|إكسل|باور بي آي|تحليل|إدارة|قيادة|شبكات|برمجة)/i.test(\n          l,
+        return /(excel|power bi|sql|python|react|typescript|javascript|java|oracle|aws|azure|network|communication|leadership|problem solving|docker|kubernetes|git|agile|scrum|إكسل|باور بي آي|تحليل|إدارة|قيادة|شبكات|برمجة)/i.test(
+          l,
         );
       }),
     );
@@ -1450,7 +1458,8 @@ export function parseResumeTextFallback(text: string): StructuredResume {
     const candidates = uniqueLines(
       lines.filter((l) => {
         if (contactSet.has(l.toLowerCase().trim())) return false;
-        return /(arabic|english|urdu|french|hindi|spanish|german|chinese|mandarin|العربية|الانجليزية|الإنجليزية|فرنسي|أردو|هندي)/i.test(\n          l,
+        return /(arabic|english|urdu|french|hindi|spanish|german|chinese|mandarin|العربية|الانجليزية|الإنجليزية|فرنسي|أردو|هندي)/i.test(
+          l,
         );
       }),
     );
@@ -1460,7 +1469,8 @@ export function parseResumeTextFallback(text: string): StructuredResume {
     const candidates = uniqueLines(
       lines.filter((l) => {
         if (contactSet.has(l.toLowerCase().trim())) return false;
-        return /(Bachelor|Master|Diploma|PhD|University|College|degree|graduated|بكالوريوس|ماجستير|دبلوم|جامعة|كلية|تخرج)/i.test(\n          l,
+        return /(Bachelor|Master|Diploma|PhD|University|College|degree|graduated|بكالوريوس|ماجستير|دبلوم|جامعة|كلية|تخرج)/i.test(
+          l,
         );
       }),
     );
@@ -2007,3 +2017,4 @@ export function sanitizeOptimizedSections(
   }
   return enrichStructuredResume(merged);
 }
+
