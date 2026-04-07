@@ -78,12 +78,14 @@ const QUICK_SUGGESTIONS = [
 async function streamChat({
   messages,
   userContext,
+  accessToken,
   onDelta,
   onDone,
   onError,
 }: {
   messages: { role: string; content: string }[];
   userContext: UserContext;
+  accessToken: string;
   onDelta: (text: string) => void;
   onDone: () => void;
   onError: (msg: string) => void;
@@ -93,7 +95,8 @@ async function streamChat({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${accessToken}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
     body: JSON.stringify({ messages, userContext }),
   });
@@ -207,9 +210,18 @@ export default function AIChatAssistant() {
     };
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) {
+        setMessages(prev => [...prev, { role: "assistant", content: "Session expired. Please sign in again." }]);
+        setIsLoading(false);
+        return;
+      }
+
       await streamChat({
         messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
         userContext: userCtx,
+        accessToken,
         onDelta: upsertAssistant,
         onDone: () => setIsLoading(false),
         onError: (errMsg) => {

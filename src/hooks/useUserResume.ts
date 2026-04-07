@@ -285,7 +285,12 @@ export async function uploadAndParseResume(
   const formData = buildResumeUploadFormData(file, mimeType);
 
   const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData?.session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const accessToken = sessionData?.session?.access_token;
+
+  if (!accessToken) {
+    await cleanupUploadedResumeArtifacts(resumeRow.id, filePath);
+    throw new Error("Session expired. Please sign in again.");
+  }
 
   const extractResponse = await fetch(
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-text`,
