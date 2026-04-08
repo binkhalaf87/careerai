@@ -347,6 +347,12 @@ export function prepareTextForPrompt(normalized: NormalizedResumeInput): string 
   if (normalized.skills.length) parts.push(`\n── SKILLS ──\n${sectionToText(normalized.skills)}`);
   if (normalized.education?.length) parts.push(`\n── EDUCATION ──\n${sectionToText(normalized.education)}`);
   if (normalized.certifications?.length) parts.push(`\n── CERTIFICATIONS ──\n${sectionToText(normalized.certifications)}`);
-  parts.push(`\n── CLEANED RAW TEXT ──\n${normalized.raw_text}`);
+  // Always include raw text so AI can catch anything the normalizer missed.
+  // Truncate raw_text to 30K chars to stay well within prompt token limits
+  // while preserving full content for typical resumes (1-3 pages ≈ 3-20K chars).
+  const rawSnippet = normalized.raw_text.length > 30_000
+    ? normalized.raw_text.substring(0, 30_000) + "\n[... truncated for length ...]"
+    : normalized.raw_text;
+  parts.push(`\n── CLEANED RAW TEXT ──\n${rawSnippet}`);
   return parts.join("\n").trim();
 }

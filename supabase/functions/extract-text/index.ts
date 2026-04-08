@@ -646,6 +646,17 @@ async function extractDOCXText(uint8: Uint8Array): Promise<string> {
   );
 }
 
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
 function extractTextFromXml(xml: string): string {
   const paragraphs: string[] = [];
   const paraRegex = /<w:p[\s>]([\s\S]*?)<\/w:p>/g;
@@ -656,7 +667,7 @@ function extractTextFromXml(xml: string): string {
     const textRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
     let textMatch: RegExpExecArray | null;
     while ((textMatch = textRegex.exec(paraContent)) !== null) {
-      if (textMatch[1]) texts.push(textMatch[1]);
+      if (textMatch[1]) texts.push(decodeXmlEntities(textMatch[1]));
     }
     const hasTab = /<w:tab\s*\/?>/.test(paraContent);
     const joined = texts.join(hasTab ? "\t" : "");
@@ -906,9 +917,13 @@ serve(async (req) => {
       .filter(Boolean)
       .join(", ");
 
+    const TEXT_LIMIT = 150_000;
+    if (text.length > TEXT_LIMIT) {
+      console.warn(`[extract-text] Text truncated: ${text.length} → ${TEXT_LIMIT} chars (${fileName})`);
+    }
     return new Response(
       JSON.stringify({
-        text: text.substring(0, 50000),
+        text: text.substring(0, TEXT_LIMIT),
         language,
         quality: isOcrNeeded ? "ocr_needed" : quality,
         quality_score: isOcrNeeded ? 0 : score,
