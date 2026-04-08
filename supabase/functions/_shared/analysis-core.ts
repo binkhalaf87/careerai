@@ -297,7 +297,7 @@ export const toolSchema = {
               description: "3–5 specific LinkedIn section changes.",
             },
           },
-          required: ["top_roles", "skills_to_improve", "thirty_sixty_ninety_day_plan", "certifications_recommended"],
+          required: ["top_roles", "skills_to_improve", "thirty_sixty_ninety_day_plan", "certifications_recommended", "linkedin_improvements"],
           additionalProperties: false,
         },
 
@@ -420,15 +420,118 @@ export function getMessageContentAsText(content: unknown): string {
   return "";
 }
 
-export function tryExtractJsonFromText(content: string): any | null {
-  const start = content.indexOf("{");
-  const end = content.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  try {
-    return JSON.parse(content.slice(start, end + 1));
-  } catch {
-    return null;
+function truncateForLog(value: string, max = 2000): string {
+  const text = asString(value);
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}...[truncated ${text.length - max} chars]` : text;
+}
+
+function stripMarkdownCodeFences(content: string): string {
+  const trimmed = content.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fencedMatch ? fencedMatch[1].trim() : trimmed;
+}
+
+function extractBalancedJsonObject(content: string): string | null {
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === "{") {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+
+    if (char === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        return content.slice(start, i + 1);
+      }
+    }
   }
+
+  return null;
+}
+
+function sanitizeJsonLikeText(content: string): string {
+  return content
+    .replace(/^\uFEFF/, "")
+    .replace(/^json\s*/i, "")
+    .replace(/,\s*([}\]])/g, "$1")
+    .trim();
+}
+
+function tryParseJsonCandidate(content: string): any | null {
+  const candidate = sanitizeJsonLikeText(stripMarkdownCodeFences(content));
+  if (!candidate) return null;
+
+  const attempts = [candidate];
+  const balanced = extractBalancedJsonObject(candidate);
+  if (balanced && balanced !== candidate) attempts.push(balanced);
+
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt);
+    } catch {
+      // Continue to the next parse strategy.
+    }
+  }
+
+  return null;
+}
+
+export function tryExtractJsonFromText(content: string): any | null {
+  return tryParseJsonCandidate(content);
+}
+
+function describeAnalysisShape(analysis: NormalizedAnalysis): string {
+  return JSON.stringify({
+    target_role: analysis.target_role,
+    candidate_name: analysis.candidate_name,
+    ats_score: analysis.ats_score,
+    best_fit_roles_count: analysis.executive_summary.best_fit_roles.length,
+    strengths_count: analysis.executive_summary.top_strengths.length,
+    risks_count: analysis.executive_summary.main_risks.length,
+    salary_rows: analysis.salary_estimation.salary_table.length,
+    quick_improvements_count: analysis.quick_improvements.length,
+    interview_questions_count: analysis.interview_questions.length,
+    rewrite_words: analysis.resume_rewrite.full_resume.split(/\s+/).filter(Boolean).length,
+  });
+}
+
+function logFinalAnalysis(label: string, analysis: NormalizedAnalysis) {
+  console.info(`[analyze] ${label}: ${describeAnalysisShape(analysis)}`);
+}
+
+function isRecoverableAiSchemaError(status: number, errText: string): boolean {
+  if (status !== 400) return false;
+  const text = errText.toLowerCase();
+  return text.includes("invalid_function_parameters") ||
+    text.includes("invalid schema for function") ||
+    text.includes("'required' is required") ||
+    text.includes("including every key in properties");
 }
 
 // ─── Merge Layer A (deterministic) + Layer B (AI narrative) ─────────────────
@@ -477,7 +580,7 @@ export function mergeAnalysisLayers(
   return {
     // ── Identity (from AI — it reads the actual name and role) ─────────────
     target_role: asString(aiRaw?.target_role, fallbackText),
-    candidate_name: asString(aiRaw?.candidate_name, deterministicScores.candidate_level),
+    candidate_name: asString(aiRaw?.candidate_name, fallbackText),
 
     // ── Scores: Layer A is authoritative ───────────────────────────────────
     ats_score: deterministicScores.ats_score,
@@ -1065,38 +1168,64 @@ ${userPrompt}` : userPrompt,
         continue;
       }
       console.error(`[analyze] AI gateway error (attempt ${attempt}):`, response.status, errText.slice(0, 500));
+      if (isRecoverableAiSchemaError(response.status, errText)) {
+        console.warn(`[analyze] OpenAI rejected the tool schema/request. Falling back to deterministic analysis. Raw error: ${truncateForLog(errText, 1000)}`);
+        const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
+        logFinalAnalysis("Final normalized response shape (schema fallback)", analysis);
+        return { analysis, normalizedInput, deterministicScores };
+      }
       // Other gateway errors (400, 401, etc.) are not retried
       throw Object.assign(new Error("ai_gateway_error"), { status: 502 });
     }
 
     // ── Parse response ─────────────────────────────────────────────────────
-    const data = await response.json();
+    let data: any;
+    try {
+      data = await response.json();
+    } catch (error) {
+      console.error(`[analyze] Failed to decode OpenAI JSON response (attempt ${attempt}):`, error);
+      const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
+      logFinalAnalysis("Final normalized response shape (response-json fallback)", analysis);
+      return { analysis, normalizedInput, deterministicScores };
+    }
     const message = data?.choices?.[0]?.message;
     const toolCall = message?.tool_calls?.[0];
 
     let parsedRaw: any = null;
+    const rawToolArguments = typeof toolCall?.function?.arguments === "string" ? toolCall.function.arguments : "";
+    const rawContentText = getMessageContentAsText(message?.content);
 
-    if (toolCall?.function?.arguments) {
-      try {
-        parsedRaw = JSON.parse(toolCall.function.arguments);
-      } catch (e) {
-        console.error(`[analyze] JSON parse error (attempt ${attempt}):`, e);
+    if (rawToolArguments) {
+      console.info(`[analyze] Raw AI tool arguments (attempt ${attempt}): ${truncateForLog(rawToolArguments)}`);
+      parsedRaw = tryParseJsonCandidate(rawToolArguments);
+      if (!parsedRaw) {
+        console.error(`[analyze] JSON parse error (attempt ${attempt}): unable to parse tool arguments`);
         // parsedRaw stays null — validator will treat this as malformed
       }
     }
 
-    if (!parsedRaw) {
-      const contentText = getMessageContentAsText(message?.content);
-      if (contentText) parsedRaw = tryExtractJsonFromText(contentText);
+    if (rawContentText) {
+      console.info(`[analyze] Raw AI message content (attempt ${attempt}): ${truncateForLog(rawContentText)}`);
+    }
+
+    if (!parsedRaw && rawContentText) {
+      parsedRaw = tryExtractJsonFromText(rawContentText);
+      if (parsedRaw) {
+        console.warn(`[analyze] Recovered AI payload from message content on attempt ${attempt}`);
+      }
     }
 
     // ── Validate ───────────────────────────────────────────────────────────
     const decision = validateAiOutput(parsedRaw, attempt);
+    if (decision.failures.length) {
+      console.warn(`[analyze] Validation failures (attempt ${attempt}): ${JSON.stringify(decision.failures)}`);
+    }
     console.info(`[analyze] Attempt ${attempt} → ${decision.summary}`);
 
     if (decision.action === "pass") {
       // ✅ Output meets all quality rules — merge and return
       const analysis = mergeAnalysisLayers(deterministicScores, parsedRaw, language);
+      logFinalAnalysis("Final normalized response shape", analysis);
       return { analysis, normalizedInput, deterministicScores };
     }
 
@@ -1104,6 +1233,7 @@ ${userPrompt}` : userPrompt,
       // 🔧 Minor out-of-range values fixed in place — merge repaired object
       console.warn(`[analyze] Repaired output on attempt ${attempt}`);
       const analysis = mergeAnalysisLayers(deterministicScores, decision.repaired!, language);
+      logFinalAnalysis("Final normalized response shape (repaired)", analysis);
       return { analysis, normalizedInput, deterministicScores };
     }
 
@@ -1115,10 +1245,12 @@ ${userPrompt}` : userPrompt,
       if (parsedRaw) {
         console.warn(`[analyze] Using sub-quality output as last resort.`);
         const analysis = mergeAnalysisLayers(deterministicScores, parsedRaw, language);
+        logFinalAnalysis("Final normalized response shape (sub-quality)", analysis);
         return { analysis, normalizedInput, deterministicScores };
       }
       console.warn(`[analyze] Falling back to deterministic-only analysis after validation failure.`);
       const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
+      logFinalAnalysis("Final normalized response shape (deterministic fallback)", analysis);
       return { analysis, normalizedInput, deterministicScores };
     }
 
@@ -1131,5 +1263,6 @@ ${userPrompt}` : userPrompt,
   // Should never reach here (loop covers 1..MAX_ATTEMPTS and always returns/throws)
   console.warn(`[analyze] Retries exhausted. Returning deterministic fallback.`);
   const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
+  logFinalAnalysis("Final normalized response shape (retry exhaustion fallback)", analysis);
   return { analysis, normalizedInput, deterministicScores };
 }
