@@ -983,7 +983,13 @@ ${userPrompt}` : userPrompt,
     // ── HTTP error handling ────────────────────────────────────────────────
     if (!response.ok) {
       const errText = await response.text();
-      if (response.status === 429) throw Object.assign(new Error("rate_limit"), { status: 429 });
+      if (response.status === 429) {
+        // Retry with exponential backoff instead of failing immediately
+        const backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 16000);
+        console.warn(`[analyze] OpenAI rate limit (attempt ${attempt}), retrying in ${backoffMs}ms`);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
       if (response.status === 402) throw Object.assign(new Error("credits_exhausted"), { status: 402 });
       console.error(`[analyze] AI gateway error (attempt ${attempt}):`, response.status, errText);
       // Gateway errors are not retried — they are infrastructure failures

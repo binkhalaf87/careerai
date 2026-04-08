@@ -947,7 +947,6 @@ const Analysis = () => {
       } catch (err: any) {
         console.error("Auto-analysis error:", err);
         if (err?.message === "Rate limit exceeded") {
-          toast.error(language === "ar" ? "تم الوصول للحد المؤقت للتحليل. أعد المحاولة بعد قليل." : "Analysis rate limit reached. Please retry in a moment.");
           setAutoAnalyzeFailed(true);
           return;
         }

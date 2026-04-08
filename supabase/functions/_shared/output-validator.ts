@@ -24,7 +24,7 @@
 
 export const VALIDATION = {
   /** Maximum AI attempts (attempt 1 = initial call, attempts 2..N = retries) */
-  MAX_ATTEMPTS: 3,
+  MAX_ATTEMPTS: 6,
 
   // ── Structural minimums ────────────────────────────────────────────────────
   MIN_STRENGTHS:           3,   // executive_summary.top_strengths
