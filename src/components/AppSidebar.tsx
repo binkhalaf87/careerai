@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  Wand2,
   PenSquare,
   MessageSquare,
   Send,
@@ -65,7 +64,6 @@ export function AppSidebar() {
       .then(({ data }) => setIsAdmin(!!data && data.length > 0));
   }, [user]);
 
-  // Derive display name + initials from user metadata
   const fullName: string = (user?.user_metadata?.full_name as string) || "";
   const email: string = user?.email || "";
   const initials = fullName
@@ -82,7 +80,6 @@ export function AppSidebar() {
   const resumeItems = [
     { title: ar ? "كتابة السيرة" : "Resume Builder", url: "/builder", icon: PenSquare },
     { title: ar ? "تحليل CV" : "CV Analysis", url: "/analysis", icon: BarChart3 },
-    { title: ar ? "تحسين بالذكاء" : "AI Enhancement", url: "/analysis?tab=enhanced", icon: Wand2 },
   ];
 
   const interviewItems = [
@@ -91,7 +88,6 @@ export function AppSidebar() {
 
   const marketingItems = [{ title: ar ? "Smart Send" : "Smart Send", url: "/marketing", icon: Send }];
   const jobItems = [{ title: ar ? "البحث عن الوظائف" : "Job Search", url: "/job-search", icon: Search }];
-  
 
   const renderItem = (item: { title: string; url: string; icon: any }) => (
     <SidebarMenuItem key={item.url}>
@@ -186,9 +182,6 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-
-
-
         {isAdmin && (
           <SidebarGroup>
             <SidebarGroupContent>
@@ -200,7 +193,6 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      {/* ── Avatar Footer ── */}
       <SidebarFooter className="p-3 border-t border-sidebar-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -229,19 +221,16 @@ export function AppSidebar() {
           </DropdownMenuTrigger>
 
           <DropdownMenuContent side="top" align={ar ? "end" : "start"} sideOffset={8} className="w-56 mb-1">
-            {/* User info header */}
             <div className="px-3 py-2 border-b border-border mb-1">
               <p className="text-xs font-semibold text-foreground truncate">{fullName || email}</p>
               {fullName && <p className="text-[10px] text-muted-foreground truncate">{email}</p>}
             </div>
 
-            {/* Profile */}
             <DropdownMenuItem onClick={() => navigate("/profile")} className="gap-2.5 cursor-pointer">
               <User className="h-4 w-4 text-muted-foreground" />
               {ar ? "الملف الشخصي" : "Profile"}
             </DropdownMenuItem>
 
-            {/* Settings */}
             <DropdownMenuItem onClick={() => navigate("/settings")} className="gap-2.5 cursor-pointer">
               <Settings className="h-4 w-4 text-muted-foreground" />
               {ar ? "الإعدادات" : "Settings"}
@@ -249,13 +238,11 @@ export function AppSidebar() {
 
             <DropdownMenuSeparator />
 
-            {/* Switch dashboard */}
             <DropdownMenuItem onClick={handleSwitchToRecruiter} className="gap-2.5 cursor-pointer">
               <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
               {ar ? "لوحة التوظيف" : "Recruiter Panel"}
             </DropdownMenuItem>
 
-            {/* Language toggle */}
             <DropdownMenuItem onClick={toggleLanguage} className="gap-2.5 cursor-pointer">
               <Globe className="h-4 w-4 text-muted-foreground" />
               {ar ? "Switch to English" : "التبديل للعربية"}
@@ -263,7 +250,6 @@ export function AppSidebar() {
 
             <DropdownMenuSeparator />
 
-            {/* Sign out */}
             <DropdownMenuItem
               onClick={handleSignOut}
               className="gap-2.5 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
@@ -277,5 +263,3 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
-
-

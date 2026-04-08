@@ -67,8 +67,8 @@ const PricingSection = () => {
       description: ar ? "مثالية للبداية" : "Great to get started",
       icon: Zap,
       features: ar
-        ? ["30 نقطة شهرياً", "تحليل السيرة الذاتية", "تحسين بالذكاء الاصطناعي", "مقابلات ذكية", "تسويق السيرة"]
-        : ["30 credits/month", "Resume analysis", "AI enhancement", "AI interviews", "Resume marketing"],
+        ? ["30 نقطة شهرياً", "تحليل السيرة الذاتية", "مقابلات ذكية", "تسويق السيرة"]
+        : ["30 credits/month", "Resume analysis", "AI interviews", "Resume marketing"],
       cta: ar ? "اشترك الآن" : "Subscribe",
       popular: false,
       gradient: "from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40",
@@ -83,8 +83,8 @@ const PricingSection = () => {
       description: ar ? "الأفضل للباحثين عن عمل" : "Best for job seekers",
       icon: Sparkles,
       features: ar
-        ? ["100 نقطة شهرياً", "تحليل السيرة الذاتية", "تحسين بالذكاء الاصطناعي", "مقابلات ذكية", "تسويق السيرة", "دعم ذو أولوية"]
-        : ["100 credits/month", "Resume analysis", "AI enhancement", "AI interviews", "Resume marketing", "Priority support"],
+        ? ["100 نقطة شهرياً", "تحليل السيرة الذاتية", "مقابلات ذكية", "تسويق السيرة", "دعم ذو أولوية"]
+        : ["100 credits/month", "Resume analysis", "AI interviews", "Resume marketing", "Priority support"],
       cta: ar ? "اشترك الآن" : "Subscribe",
       popular: true,
       gradient: "from-primary/5 to-primary/10",
@@ -99,8 +99,8 @@ const PricingSection = () => {
       description: ar ? "للاستخدام المكثف" : "For power users",
       icon: Crown,
       features: ar
-        ? ["300 نقطة شهرياً", "تحليل السيرة الذاتية", "تحسين بالذكاء الاصطناعي", "مقابلات ذكية", "تسويق السيرة", "دعم ذو أولوية"]
-        : ["300 credits/month", "Resume analysis", "AI enhancement", "AI interviews", "Resume marketing", "Priority support"],
+        ? ["300 نقطة شهرياً", "تحليل السيرة الذاتية", "مقابلات ذكية", "تسويق السيرة", "دعم ذو أولوية"]
+        : ["300 credits/month", "Resume analysis", "AI interviews", "Resume marketing", "Priority support"],
       cta: ar ? "اشترك الآن" : "Subscribe",
       popular: false,
       gradient: "from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30",
@@ -255,5 +255,4 @@ const PricingSection = () => {
 };
 
 export default PricingSection;
-
 

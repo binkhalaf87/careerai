@@ -17,7 +17,7 @@ const WhyTalentrySection = () => {
     },
     {
       traditional: ar ? "تعيد كتابة سيرتك بالتجربة والخطأ" : "Rewrite your resume by trial and error",
-      talentry: ar ? "تحسين احترافي فوري بالذكاء الاصطناعي" : "Instant professional AI enhancement",
+      talentry: ar ? "تحسين موجّه مبني على تحليل فعلي لنقاط الضعف" : "Targeted improvements based on real weakness analysis",
     },
     {
       traditional: ar ? "تذهب للمقابلة بدون تحضير كافٍ" : "Go to interviews underprepared",
@@ -144,5 +144,4 @@ const WhyTalentrySection = () => {
 };
 
 export default WhyTalentrySection;
-
 

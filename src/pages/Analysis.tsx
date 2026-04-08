@@ -1084,7 +1084,9 @@ const Analysis = () => {
   };
 
   useEffect(() => {
-    if (requestedTab) { setActiveTab(requestedTab); }
+    if (!requestedTab) return;
+    const allowedTabs = ["overview", "ats", "career", "salary", "recruiter", "improvements", "interview"];
+    setActiveTab(allowedTabs.includes(requestedTab) ? requestedTab : "overview");
   }, [requestedTab]);
 
   useEffect(() => {
@@ -1518,7 +1520,6 @@ const Analysis = () => {
     { id: "recruiter",    labelAr: "نظرة المجند", labelEn: "Recruiter", icon: Eye },
     { id: "improvements", labelAr: "التحسينات", labelEn: "Fixes",  icon: Zap },
     { id: "interview",    labelAr: "المقابلة", labelEn: "Interview", icon: MessageSquare },
-    { id: "enhanced",     labelAr: "السيرة المحسنة", labelEn: "Enhanced CV", icon: Wand2 },
   ] as const;
   type ReportTab = (typeof reportTabs)[number]["id"];
 
@@ -1527,19 +1528,7 @@ const Analysis = () => {
       toast.error(ar ? "لا توجد بيانات كافية" : "Not enough data");
       return;
     }
-    try {
-      await rewrite({
-        resume: { id: resumeId, raw_resume_text: storedResumeData.raw_resume_text || "", structured_resume_json: storedResumeData.structured_resume_json || {}, corrections: correctionsDraft },
-        analysis: result as unknown as Record<string, unknown>,
-        userId: user?.id,
-      });
-      setActiveTab("enhanced");
-      toast.success(ar ? "تم إنشاء السيرة المحسنة" : "Enhanced resume generated");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (/insufficient points/i.test(message)) { setShowInsufficientPoints(true); return; }
-      toast.error(ar ? "تعذر إنشاء السيرة المحسنة" : "Could not generate the enhanced resume");
-    }
+    return;
   };
 
   return (
@@ -1699,16 +1688,6 @@ const Analysis = () => {
                   <MessageSquare className="w-4 h-4" />
                   {ar ? "مقابلة AI" : "AI Interview"}
                 </Link>
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setActiveTab("enhanced" as any)}
-                className="rounded-xl gap-2 flex-1 lg:flex-none text-violet-600 dark:text-violet-400
-                  hover:bg-violet-500/8"
-              >
-                <Wand2 className="w-4 h-4" />
-                {ar ? "السيرة المحسنة" : "Enhanced CV"}
               </Button>
             </div>
           </div>
