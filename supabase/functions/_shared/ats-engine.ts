@@ -33,15 +33,6 @@
 
 import type { NormalizedResumeInput } from "./resume-normalizer.ts";
 
-function sectionToText(value: string | string[] | null | undefined): string {
-  if (Array.isArray(value)) return value.join("\n").trim();
-  return (value ?? "").trim();
-}
-
-function sectionHasContent(value: string | string[] | null | undefined, minLen = 1): boolean {
-  return sectionToText(value).length >= minLen;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -324,6 +315,16 @@ function inferLevel(years: number): "junior" | "mid" | "senior" | "executive" {
 // FACTOR SCORERS  (private — only computeAtsScores() is exported)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function sectionText(value: string[] | string | null | undefined): string {
+  if (!value) return "";
+  return Array.isArray(value) ? value.join("\n").trim() : value.trim();
+}
+
+function sectionLength(value: string[] | string | null | undefined): number {
+  return sectionText(value).length;
+}
+
+
 // ── Factor 1: Section Completeness (20%) ─────────────────────────────────────
 // 5 required sections × 20 points each = 100 max.
 // Partial credit: section is present AND has > 10 chars of content.
@@ -336,8 +337,8 @@ function scoreSectionCompleteness(n: NormalizedResumeInput): FactorScore {
     { label: "Certifications", value: n.certifications },
   ];
 
-  const present = SECTIONS.filter((s) => sectionHasContent(s.value, 10));
-  const missing = SECTIONS.filter((s) => !sectionHasContent(s.value, 10));
+  const present = SECTIONS.filter((s) => sectionLength(s.value) > 10);
+  const missing = SECTIONS.filter((s) => sectionLength(s.value) <= 10);
 
   const score = clamp(present.length * SC.POINTS_PER_SECTION);
 
@@ -359,7 +360,7 @@ function scoreSectionCompleteness(n: NormalizedResumeInput): FactorScore {
 // Starts at 0. Base for having a section. Then hard-skill count tiers.
 // Max without section: 10. Max with section: 100.
 function scoreSkillsPresence(n: NormalizedResumeInput, rawText: string): FactorScore {
-  const skillsText = sectionToText(n.skills);
+  const skillsText = sectionText(n.skills);
 
   if (!skillsText.trim()) {
     return {
@@ -406,7 +407,7 @@ function scoreSkillsPresence(n: NormalizedResumeInput, rawText: string): FactorS
   }
 
   // Certification bonus
-  if (sectionHasContent(n.certifications, 10)) {
+  if (sectionLength(n.certifications) > 10) {
     score += SP.CERTS_BONUS;
   }
 
@@ -424,7 +425,7 @@ function scoreSkillsPresence(n: NormalizedResumeInput, rawText: string): FactorS
 // Does the experience section clearly show WHO, WHAT, WHEN?
 // Scores: has section + dates present + current employment + structured roles.
 function scoreExperienceClarity(n: NormalizedResumeInput, years: number): FactorScore {
-  const exp = sectionToText(n.experience);
+  const exp = sectionText(n.experience);
 
   if (!exp.trim()) {
     return {
@@ -477,7 +478,7 @@ function scoreExperienceClarity(n: NormalizedResumeInput, years: number): Factor
 // ── Factor 4: Measurable Achievements (15%) ───────────────────────────────────
 // Are bullet points achievement-oriented with numbers, verbs, and impact?
 function scoreMeasurableAchievements(n: NormalizedResumeInput): FactorScore {
-  const exp = sectionToText(n.experience);
+  const exp = sectionText(n.experience);
 
   if (!exp.trim()) {
     return {
@@ -623,7 +624,7 @@ function scoreFormatting(rawText: string): FactorScore {
 // ── Factor 7: Summary Quality (5%) ────────────────────────────────────────────
 // Does the summary exist, have appropriate length, and avoid generic openers?
 function scoreSummaryQuality(n: NormalizedResumeInput): FactorScore {
-  const summary = sectionToText(n.summary);
+  const summary = sectionText(n.summary);
 
   if (!summary) {
     return {
@@ -676,7 +677,7 @@ function scoreSummaryQuality(n: NormalizedResumeInput): FactorScore {
 
 // ── Education detail (used by legacy ats_breakdown only) ──────────────────────
 function scoreEducationDetail(n: NormalizedResumeInput): FactorScore {
-  const edu = sectionToText(n.education);
+  const edu = sectionText(n.education);
 
   if (!edu) {
     return {
@@ -784,10 +785,10 @@ export function computeAtsScores(
   // ── Collect metadata ────────────────────────────────────────────────────────
   const missing_sections: string[] = [];
   if (!normalized.summary)        missing_sections.push("Summary");
-  if (!normalized.experience)     missing_sections.push("Experience");
-  if (!normalized.skills)         missing_sections.push("Skills");
-  if (!normalized.education)      missing_sections.push("Education");
-  if (!normalized.certifications) missing_sections.push("Certifications");
+  if (sectionLength(normalized.experience) === 0)     missing_sections.push("Experience");
+  if (sectionLength(normalized.skills) === 0)         missing_sections.push("Skills");
+  if (sectionLength(normalized.education) === 0)      missing_sections.push("Education");
+  if (sectionLength(normalized.certifications) === 0) missing_sections.push("Certifications");
 
   // ── Legacy aliases (required by analysis-core.ts and AI prompt) ─────────────
   const educationDetail = scoreEducationDetail(normalized);

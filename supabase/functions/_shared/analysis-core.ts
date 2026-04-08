@@ -14,7 +14,7 @@
  *   - supabase/functions/recruiter-analyze-candidate/index.ts (Recruiter flow)
  */
 
-import { normalizeResumeText, prepareTextForPrompt, extractKeywords, extractExperienceBlocks } from "./resume-normalizer.ts";
+import { normalizeResumeText, prepareTextForPrompt } from "./resume-normalizer.ts";
 import { computeAtsScores, DeterministicScores } from "./ats-engine.ts";
 import { validateAiOutput, buildRetryPrefix, VALIDATION } from "./output-validator.ts";
 
@@ -602,28 +602,8 @@ export function mergeAnalysisLayers(
 export function normalizeAnalysis(raw: any, language: string): NormalizedAnalysis {
   // This path is only reached if callAnalysisAI() is bypassed (should not happen).
   // Build a stub DeterministicScores from whatever the AI returned.
-  const stubAtsScore = clampScore(raw?.ats_score, 0);
   const stub: DeterministicScores = {
-    overall_score: stubAtsScore,
-    factor_scores: {
-      section_completeness: clampScore(raw?.ats_breakdown?.sections?.score, 0),
-      skills_presence: clampScore(raw?.ats_breakdown?.skills?.score, 0),
-      experience_clarity: clampScore(raw?.ats_breakdown?.experience?.score, 0),
-      measurable_achievements: clampScore(raw?.section_scores?.experience_quality, 0),
-      keyword_coverage: clampScore(raw?.ats_breakdown?.keywords?.score, 0),
-      formatting: clampScore(raw?.ats_breakdown?.formatting?.score, 0),
-      summary_quality: clampScore(raw?.section_scores?.career_progression, 0),
-    },
-    factor_breakdown: {
-      section_completeness: { score: clampScore(raw?.ats_breakdown?.sections?.score, 0), current_state: "", problem: "", recommended_improvement: "" },
-      skills_presence: { score: clampScore(raw?.ats_breakdown?.skills?.score, 0), current_state: "", problem: "", recommended_improvement: "" },
-      experience_clarity: { score: clampScore(raw?.ats_breakdown?.experience?.score, 0), current_state: "", problem: "", recommended_improvement: "" },
-      measurable_achievements: { score: clampScore(raw?.section_scores?.experience_quality, 0), current_state: "", problem: "", recommended_improvement: "" },
-      keyword_coverage: { score: clampScore(raw?.ats_breakdown?.keywords?.score, 0), current_state: "", problem: "", recommended_improvement: "" },
-      formatting: { score: clampScore(raw?.ats_breakdown?.formatting?.score, 0), current_state: "", problem: "", recommended_improvement: "" },
-      summary_quality: { score: clampScore(raw?.section_scores?.career_progression, 0), current_state: "", problem: "", recommended_improvement: "" },
-    },
-    ats_score: stubAtsScore,
+    ats_score: clampScore(raw?.ats_score, 0),
     section_scores: {
       resume_formatting: clampScore(raw?.section_scores?.resume_formatting, 0),
       keyword_optimization: clampScore(raw?.section_scores?.keyword_optimization, 0),
@@ -928,30 +908,15 @@ export async function callAnalysisAI(opts: CallAnalysisOptions): Promise<CallAna
 
   // ── Layer A: Deterministic normalization + ATS scoring (no AI) ─────────────
   const rawText = resumeText ?? "";
-  console.log("[analyze] rawText:", rawText);
-
   let normalizedInput = normalizeResumeText(rawText);
-  console.log("[analyze] normalizedInput:", JSON.stringify(normalizedInput, null, 2));
+  console.log("[analysis-core] rawText:", rawText);
+  console.log("[analysis-core] normalizedInput:", JSON.stringify(normalizedInput));
 
-  if (normalizedInput.skills.length === 0 || normalizedInput.experience.length === 0) {
-    console.warn("[analyze] Weak normalization detected. Re-running deterministic fallback extraction.");
-    normalizedInput = {
-      ...normalizedInput,
-      skills: normalizedInput.skills.length ? normalizedInput.skills : extractKeywords(rawText),
-      experience: normalizedInput.experience.length ? normalizedInput.experience : extractExperienceBlocks(rawText),
-    };
-  }
-
-  if (normalizedInput.skills.length < 3 && rawText.length > 200) {
-    console.warn("[analyze] Validation guard triggered: skills < 3 with long raw text. Running fallback enrichment again.");
-    normalizedInput = {
-      ...normalizedInput,
-      skills: Array.from(new Set([...normalizedInput.skills, ...extractKeywords(rawText)])).filter(Boolean).slice(0, 24),
-      experience: normalizedInput.experience.length
-        ? normalizedInput.experience
-        : extractExperienceBlocks(rawText),
-    };
-    console.log("[analyze] normalizedInput.afterValidationGuard:", JSON.stringify(normalizedInput, null, 2));
+  if (rawText.length > 200 && normalizedInput.skills.length < 3) {
+    console.warn("[analysis-core] Weak skills extraction detected. Re-running normalizer fallback guard.");
+    normalizedInput = normalizeResumeText(`${rawText}
+${rawText}`);
+    console.log("[analysis-core] normalizedInputAfterGuard:", JSON.stringify(normalizedInput));
   }
 
   const deterministicScores = computeAtsScores(normalizedInput, rawText);

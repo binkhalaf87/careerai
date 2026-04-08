@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { deductPoints, getPointsBalance, SERVICE_COSTS, hasFreeAnalysis, markFreeAnalysisUsed } from "@/lib/points";
 import { useCareerFlow } from "@/contexts/CareerFlowContext";
 import FlowProgressBar from "@/components/career-flow/FlowProgressBar";
@@ -402,6 +402,8 @@ const Analysis = () => {
   const [lastAnalysisId, setLastAnalysisId] = useState<string | null>(null);
   const [reportLanguage, setReportLanguage] = useState<"ar" | "en">("ar");
   const [autoAnalyzeFailed, setAutoAnalyzeFailed] = useState(false);
+  const autoAnalyzeInFlightRef = useRef(false);
+  const autoAnalyzeRequestKeyRef = useRef<string | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [correctionsDraft, setCorrectionsDraft] = useState({ fullName: "", title: "", contact: "", summary: "" });
@@ -724,11 +726,19 @@ const Analysis = () => {
   useEffect(() => {
     setAutoAnalyzeFailed(false);
     setSelectedResumeId(resumeId || null);
-  }, [analysisRunKey, resumeId]);
+    autoAnalyzeInFlightRef.current = false;
+    autoAnalyzeRequestKeyRef.current = null;
+  }, [analysisRunKey, resumeId, reviewAnalysisId, reportLanguage]);
 
   /* ── Main auto-analyze effect (logic unchanged) ── */
   useEffect(() => {
     if ((!resumeId && !reviewAnalysisId) || !user || analyzing || result || autoAnalyzeFailed) return;
+
+    const requestKey = `${user.id}:${reviewAnalysisId || resumeId}:${reportLanguage}`;
+    if (autoAnalyzeInFlightRef.current || autoAnalyzeRequestKeyRef.current === requestKey) return;
+    autoAnalyzeInFlightRef.current = true;
+    autoAnalyzeRequestKeyRef.current = requestKey;
+
     const autoAnalyze = async () => {
       try {
         if (reviewAnalysisId) {
@@ -936,6 +946,11 @@ const Analysis = () => {
         toast.success(t.analysis.analysisComplete);
       } catch (err: any) {
         console.error("Auto-analysis error:", err);
+        if (err?.message === "Rate limit exceeded") {
+          toast.error(language === "ar" ? "تم الوصول للحد المؤقت للتحليل. أعد المحاولة بعد قليل." : "Analysis rate limit reached. Please retry in a moment.");
+          setAutoAnalyzeFailed(true);
+          return;
+        }
         if (resumeId) {
           const storedResume = await getStoredResumeData(user.id, resumeId);
           setResult(
@@ -957,11 +972,12 @@ const Analysis = () => {
           setAutoAnalyzeFailed(true);
         }
       } finally {
+        autoAnalyzeInFlightRef.current = false;
         setAnalyzing(false);
       }
     };
     autoAnalyze();
-  }, [user, resumeId, reviewAnalysisId, analyzing, result, language, t, reportLanguage, autoAnalyzeFailed]);
+  }, [user?.id, resumeId, reviewAnalysisId, analyzing, result, language, t, reportLanguage, autoAnalyzeFailed]);
 
   /* ── Resumes loader ── */
   const [userResumes, setUserResumes] = useState<{ id: string; file_name: string; created_at: string }[]>([]);
