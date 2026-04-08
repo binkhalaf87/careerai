@@ -457,10 +457,10 @@ export function mergeAnalysisLayers(
   ): AtsBreakdownItem => ({
     // Score: ALWAYS from deterministic engine — never from AI
     score: engineDetail.score,
-    // Narrative: AI commentary, falling back to engine's own text
-    current_state: asString(aiNarrative?.current_state, engineDetail.current_state),
-    problem: asString(aiNarrative?.problem, engineDetail.problem),
-    recommended_improvement: asString(aiNarrative?.recommended_improvement, engineDetail.recommended_improvement),
+    // Narrative: AI commentary, falling back to engine's own text. Capped at 600 chars each.
+    current_state: asString(aiNarrative?.current_state, engineDetail.current_state).slice(0, 600),
+    problem: asString(aiNarrative?.problem, engineDetail.problem).slice(0, 600),
+    recommended_improvement: asString(aiNarrative?.recommended_improvement, engineDetail.recommended_improvement).slice(0, 600),
   });
 
   // candidate_level: engine is authoritative (years-based), but AI can provide
@@ -486,10 +486,11 @@ export function mergeAnalysisLayers(
     // ── Executive summary: narrative from AI, level from engine ────────────
     executive_summary: {
       candidate_level: resolvedLevel,
-      summary_paragraphs: asString(aiRaw?.executive_summary?.summary_paragraphs, fallbackText),
-      best_fit_roles: asStringArray(aiRaw?.executive_summary?.best_fit_roles),
-      top_strengths: asStringArray(aiRaw?.executive_summary?.top_strengths),
-      main_risks: asStringArray(aiRaw?.executive_summary?.main_risks),
+      // Cap at 2500 chars — guards against AI echoing back raw CV text
+      summary_paragraphs: asString(aiRaw?.executive_summary?.summary_paragraphs, fallbackText).slice(0, 2500),
+      best_fit_roles: asStringArray(aiRaw?.executive_summary?.best_fit_roles).slice(0, 6),
+      top_strengths: asStringArray(aiRaw?.executive_summary?.top_strengths).slice(0, 5),
+      main_risks: asStringArray(aiRaw?.executive_summary?.main_risks).slice(0, 5),
     },
 
     // ── ATS breakdown: engine scores + AI narratives ────────────────────────
@@ -580,8 +581,8 @@ export function mergeAnalysisLayers(
             priority: (["high", "medium", "low"] as const).includes(item?.priority)
               ? item.priority
               : ("medium" as const),
-            description: asString(item?.description),
-            action_step: asString(item?.action_step),
+            description: asString(item?.description).slice(0, 400),
+            action_step: asString(item?.action_step).slice(0, 400),
           }))
           .filter((item: any) => item.description || item.action_step)
       : [],
@@ -590,8 +591,8 @@ export function mergeAnalysisLayers(
     interview_questions: Array.isArray(aiRaw?.interview_questions)
       ? aiRaw.interview_questions
           .map((item: any) => ({
-            question: asString(item?.question),
-            suggested_answer_direction: asString(item?.suggested_answer_direction),
+            question: asString(item?.question).slice(0, 400),
+            suggested_answer_direction: asString(item?.suggested_answer_direction).slice(0, 800),
           }))
           .filter((item: any) => item.question || item.suggested_answer_direction)
       : [],
@@ -909,14 +910,13 @@ export async function callAnalysisAI(opts: CallAnalysisOptions): Promise<CallAna
   // ── Layer A: Deterministic normalization + ATS scoring (no AI) ─────────────
   const rawText = resumeText ?? "";
   let normalizedInput = normalizeResumeText(rawText);
-  console.log("[analysis-core] rawText:", rawText);
-  console.log("[analysis-core] normalizedInput:", JSON.stringify(normalizedInput));
+  console.log(`[analysis-core] rawText length: ${rawText.length} chars`);
+  console.log(`[analysis-core] normalizedInput: skills=${normalizedInput.skills.length}, experience=${normalizedInput.workExperience?.length ?? 0}`);
 
   if (rawText.length > 200 && normalizedInput.skills.length < 3) {
     console.warn("[analysis-core] Weak skills extraction detected. Re-running normalizer fallback guard.");
-    normalizedInput = normalizeResumeText(`${rawText}
-${rawText}`);
-    console.log("[analysis-core] normalizedInputAfterGuard:", JSON.stringify(normalizedInput));
+    normalizedInput = normalizeResumeText(`${rawText}\n${rawText}`);
+    console.log(`[analysis-core] normalizedInput after guard: skills=${normalizedInput.skills.length}`);
   }
 
   const deterministicScores = computeAtsScores(normalizedInput, rawText);

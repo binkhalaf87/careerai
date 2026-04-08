@@ -354,9 +354,10 @@ const mergeWithDeterministicAnalysis = (
         ? existing.executive_summary.main_risks
         : deterministic.executive_summary.main_risks) || [],
   },
-  quick_improvements: deterministic.quick_improvements.length
-    ? deterministic.quick_improvements
-    : existing?.quick_improvements || [],
+  // Prefer AI improvements (richer, specific) when they exist; fall back to deterministic
+  quick_improvements: existing?.quick_improvements?.filter((i) => i?.description?.trim()).length
+    ? existing.quick_improvements
+    : deterministic.quick_improvements,
   resume_rewrite: { ...deterministic.resume_rewrite, ...(existing?.resume_rewrite || {}) },
   career_recommendations: {
     ...deterministic.career_recommendations,
@@ -517,6 +518,24 @@ const Analysis = () => {
       .trim();
   };
 
+  // Max chars allowed in a summary field before we treat it as raw CV dump
+  const SUMMARY_MAX_LEN = 2500;
+
+  /** Returns true if the text looks like raw extracted CV text rather than AI analysis. */
+  const looksLikeRawCvText = (text: string): boolean => {
+    if (!text || text.length === 0) return false;
+    if (text.length > SUMMARY_MAX_LEN) return true;
+    // High newline density in first 800 chars → multi-line extraction artifact
+    const sample = text.slice(0, 800);
+    const newlineCount = (sample.match(/\n/g) || []).length;
+    if (newlineCount > 18) return true;
+    // Email address embedded = CV header content
+    if (/@[a-z0-9.-]+\.[a-z]{2,}/i.test(text)) return true;
+    // Phone number pattern (8+ digit block)
+    if (/\+?\d[\d\s\-()]{8,}\d/.test(text)) return true;
+    return false;
+  };
+
   const buildEnhanceUrl = (focus?: string) => {
     const p = new URLSearchParams();
     if (lastAnalysisId) p.set("analysis", lastAnalysisId);
@@ -560,9 +579,10 @@ const Analysis = () => {
 
       // Normalize executive_summary
       const rawExec = payload.executive_summary || {};
-      const summaryText = extractSummaryText(
+      const rawSummaryText = extractSummaryText(
         rawExec.summary_paragraphs || rawExec.summary || rawExec.paragraphs || payload.summary || "",
       );
+      const summaryText = looksLikeRawCvText(rawSummaryText) ? "" : rawSummaryText.slice(0, SUMMARY_MAX_LEN);
       const best_fit_roles = dedupeList(
         safeList(rawExec.best_fit_roles || payload.best_fit_roles || existing.best_fit_roles || []),
       );
@@ -779,20 +799,27 @@ const Analysis = () => {
           .limit(1);
         if (existingAnalysis && existingAnalysis.length > 0) {
           const existing = existingAnalysis[0];
-          const { data: resumeMeta } = await supabase.from("resumes").select("updated_at").eq("id", resumeId).single();
-          const resumeUpdated = resumeMeta?.updated_at ? new Date(resumeMeta.updated_at) : null;
-          const analysisCreated = new Date(existing.created_at);
-          if (!resumeUpdated || resumeUpdated <= analysisCreated) {
-            const deterministicCached = buildDeterministicAnalysis(
-              parseStructuredResumeForAts(storedResume, storedResume?.raw_resume_text || ""),
-              reportLanguage,
-            );
-            setLastAnalysisId(existing.id);
-            setResult(reconstructStoredResult(existing, deterministicCached));
-            markStep("analyze");
-            toast.success(language === "ar" ? "تم تحميل التحليل السابق" : "Previous analysis loaded");
-            return;
+          // Only use cached analysis if it was produced by the current schema version
+          const isCachedVersionCurrent =
+            (existing as Record<string, unknown>).analysis_version ===
+            ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION;
+          if (isCachedVersionCurrent) {
+            const { data: resumeMeta } = await supabase.from("resumes").select("updated_at").eq("id", resumeId).single();
+            const resumeUpdated = resumeMeta?.updated_at ? new Date(resumeMeta.updated_at) : null;
+            const analysisCreated = new Date(existing.created_at);
+            if (!resumeUpdated || resumeUpdated <= analysisCreated) {
+              const deterministicCached = buildDeterministicAnalysis(
+                parseStructuredResumeForAts(storedResume, storedResume?.raw_resume_text || ""),
+                reportLanguage,
+              );
+              setLastAnalysisId(existing.id);
+              setResult(reconstructStoredResult(existing, deterministicCached));
+              markStep("analyze");
+              toast.success(language === "ar" ? "تم تحميل التحليل السابق" : "Previous analysis loaded");
+              return;
+            }
           }
+          // Version mismatch or resume updated — fall through to run fresh analysis
         }
         const { data: resume, error: resumeError } = await supabase
           .from("resumes")
@@ -1081,6 +1108,9 @@ const Analysis = () => {
 
   useEffect(() => {
     if (result || reviewAnalysisId || !resumeId || loadingStoredAnalysis || !latestStoredAnalysis) return;
+    // Skip old-schema records so autoAnalyze can run fresh and produce clean output
+    const storedVersion = (latestStoredAnalysis as Record<string, unknown>).analysis_version as string | null;
+    if (storedVersion !== ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION) return;
     try {
       const deterministic = buildDeterministicAnalysis(
         parseStructuredResumeForAts(storedResumeData || null, storedResumeData?.raw_resume_text || ""),
@@ -1651,7 +1681,8 @@ const Analysis = () => {
                   <div className="p-5 space-y-4">
                     {hasText(result.executive_summary.summary_paragraphs) &&
                       !result.executive_summary.summary_paragraphs.startsWith("This score was generated") &&
-                      !result.executive_summary.summary_paragraphs.startsWith("تم إنشاء هذا التقييم") && (
+                      !result.executive_summary.summary_paragraphs.startsWith("تم إنشاء هذا التقييم") &&
+                      !looksLikeRawCvText(result.executive_summary.summary_paragraphs) && (
                         <p
                           className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words bg-muted/30 rounded-xl p-4 w-full max-w-none"
                         >{result.executive_summary.summary_paragraphs}</p>
