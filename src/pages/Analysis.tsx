@@ -72,6 +72,8 @@ interface SalaryTableRow {
 interface FullAnalysis {
   target_role: string;
   candidate_name: string;
+  analysis_status?: "complete" | "fallback";
+  is_fallback?: boolean;
   ats_score: number;
   section_scores: Record<string, number>;
   executive_summary: {
@@ -137,6 +139,8 @@ const getSupabaseFunctionErrorMessage = (error: unknown, fallback = "Analysis fa
 const EMPTY_ANALYSIS: FullAnalysis = {
   target_role: "",
   candidate_name: "",
+  analysis_status: "complete",
+  is_fallback: false,
   ats_score: 0,
   section_scores: {},
   executive_summary: {
@@ -553,6 +557,7 @@ const Analysis = () => {
   ): FullAnalysis => {
     // Try to find a nested payload in any known key
     const payload = (existing?.full_analysis ||
+      existing?.analysis_json ||
       existing?.analysis_payload ||
       existing?.result_json ||
       existing?.raw_result ||
@@ -686,6 +691,8 @@ const Analysis = () => {
         ...EMPTY_ANALYSIS,
         target_role: safeText(payload.target_role || existing.target_role || ""),
         candidate_name: safeText(payload.candidate_name || existing.candidate_name || ""),
+        analysis_status: payload.analysis_status === "fallback" ? "fallback" : "complete",
+        is_fallback: payload.is_fallback === true || payload.analysis_status === "fallback",
         ats_score,
         section_scores: Object.keys(section_scores).length > 0 ? section_scores : EMPTY_ANALYSIS.section_scores,
         executive_summary: {
@@ -727,6 +734,8 @@ const Analysis = () => {
       ...EMPTY_ANALYSIS,
       target_role: safeText((existing?.target_role as string) || ""),
       candidate_name: safeText((existing?.candidate_name as string) || ""),
+      analysis_status: existing?.analysis_status === "fallback" ? "fallback" : "complete",
+      is_fallback: existing?.is_fallback === true || existing?.analysis_status === "fallback",
       ats_score: ats_score >= 0 ? ats_score : 0,
       section_scores: (existing?.section_scores as Record<string, number>) || {},
       executive_summary: {
@@ -785,6 +794,22 @@ const Analysis = () => {
               reportLanguage,
             );
           }
+          const selectedPayload = ((selectedAnalysis as Record<string, unknown>).full_analysis ||
+            (selectedAnalysis as Record<string, unknown>).analysis_json ||
+            null) as Record<string, unknown> | null;
+          const selectedIsFallback = selectedPayload?.is_fallback === true ||
+            selectedPayload?.analysis_status === "fallback";
+          if (selectedIsFallback) {
+            setLastAnalysisId(null);
+            setResult(deterministicReview || EMPTY_ANALYSIS);
+            markStep("analyze");
+            toast.warning(
+              language === "ar"
+                ? "هذا التحليل المحفوظ احتياطي فقط، لذلك تم تجاهله وعرض التحليل الأساسي."
+                : "This saved analysis is fallback-only, so it was ignored and the core analysis was shown.",
+            );
+            return;
+          }
           setLastAnalysisId(selectedAnalysis.id);
           setResult(reconstructStoredResult(selectedAnalysis, deterministicReview));
           markStep("analyze");
@@ -802,11 +827,16 @@ const Analysis = () => {
           .limit(1);
         if (existingAnalysis && existingAnalysis.length > 0) {
           const existing = existingAnalysis[0];
+          const existingPayload = ((existing as Record<string, unknown>).full_analysis ||
+            (existing as Record<string, unknown>).analysis_json ||
+            null) as Record<string, unknown> | null;
+          const existingIsFallback = existingPayload?.is_fallback === true ||
+            existingPayload?.analysis_status === "fallback";
           // Only use cached analysis if it was produced by the current schema version
           const isCachedVersionCurrent =
             (existing as Record<string, unknown>).analysis_version ===
             ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION;
-          if (isCachedVersionCurrent) {
+          if (isCachedVersionCurrent && !existingIsFallback) {
             const { data: resumeMeta } = await supabase.from("resumes").select("updated_at").eq("id", resumeId).single();
             const resumeUpdated = resumeMeta?.updated_at ? new Date(resumeMeta.updated_at) : null;
             const analysisCreated = new Date(existing.created_at);
@@ -934,6 +964,7 @@ const Analysis = () => {
           salary_estimation: { ...deterministicAnalysis.salary_estimation, ...(analysisData.salary_estimation || {}) },
           resume_rewrite: { ...deterministicAnalysis.resume_rewrite, ...(analysisData.resume_rewrite || {}) },
         });
+        const isFallbackAnalysis = analysisData?.is_fallback === true || analysisData?.analysis_status === "fallback";
         if (freeAvailable) {
           await markFreeAnalysisUsed(user.id);
         } else {
@@ -945,7 +976,8 @@ const Analysis = () => {
           }
         }
         setStage("preparing");
-        const { data: analysisRow } = await supabase
+        if (!isFallbackAnalysis) {
+          const { data: analysisRow } = await supabase
           .from("analyses")
           .insert({
             user_id: user.id,
@@ -961,19 +993,30 @@ const Analysis = () => {
             analysis_json: mergedAnalysis,
             // ── Versioning metadata ──────────────────────────────────────────
             analysis_version:     ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION,
-            model_name:           "gpt-4o",
+            model_name:           "gemini-2.5-flash",
             prompt_version:       ANALYSIS_VERSIONS.PROMPT_VERSION,
             normalizer_version:   ANALYSIS_VERSIONS.NORMALIZER_VERSION,
             score_engine_version: ANALYSIS_VERSIONS.SCORE_ENGINE_VERSION,
           } as any)
           .select("id")
           .single();
-        if (analysisRow) setLastAnalysisId(analysisRow.id);
+          if (analysisRow) setLastAnalysisId(analysisRow.id);
+        } else {
+          setLastAnalysisId(null);
+        }
         setStage("done");
         await new Promise((r) => setTimeout(r, 600));
         setResult(mergedAnalysis);
         markStep("analyze");
-        toast.success(t.analysis.analysisComplete);
+        if (isFallbackAnalysis) {
+          toast.warning(
+            language === "ar"
+              ? "تم عرض تحليل أساسي مؤقت، ولم يتم حفظه لأن السرد الذكي لم يكتمل."
+              : "A temporary core analysis was shown and was not saved because the AI narrative did not complete.",
+          );
+        } else {
+          toast.success(t.analysis.analysisComplete);
+        }
       } catch (err: any) {
         console.error("Auto-analysis error:", err);
         if (err?.message === "Rate limit exceeded") {
@@ -1116,6 +1159,11 @@ const Analysis = () => {
     // Skip old-schema records so autoAnalyze can run fresh and produce clean output
     const storedVersion = (latestStoredAnalysis as Record<string, unknown>).analysis_version as string | null;
     if (storedVersion !== ANALYSIS_VERSIONS.ANALYSIS_SCHEMA_VERSION) return;
+    const storedPayload = ((latestStoredAnalysis as Record<string, unknown>).full_analysis ||
+      (latestStoredAnalysis as Record<string, unknown>).analysis_json ||
+      null) as Record<string, unknown> | null;
+    const storedIsFallback = storedPayload?.is_fallback === true || storedPayload?.analysis_status === "fallback";
+    if (storedIsFallback) return;
     try {
       const deterministic = buildDeterministicAnalysis(
         parseStructuredResumeForAts(storedResumeData || null, storedResumeData?.raw_resume_text || ""),

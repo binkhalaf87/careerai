@@ -61,6 +61,8 @@ export interface RecruiterAnalysisItem {
 export interface NormalizedAnalysis {
   target_role: string;
   candidate_name: string;
+  analysis_status?: "complete" | "fallback";
+  is_fallback?: boolean;
   ats_score: number;
   section_scores: SectionScores;
   executive_summary: {
@@ -601,6 +603,8 @@ export function mergeAnalysisLayers(
         : engineLevel;
 
   return {
+    analysis_status: aiRaw?.analysis_status === "fallback" ? "fallback" : "complete",
+    is_fallback: aiRaw?.is_fallback === true || aiRaw?.analysis_status === "fallback",
     // ── Identity (from AI — it reads the actual name and role) ─────────────
     target_role: asString(aiRaw?.target_role, fallbackText),
     candidate_name: asString(aiRaw?.candidate_name, fallbackText),
@@ -1031,6 +1035,8 @@ function buildDeterministicFallback(
   return mergeAnalysisLayers(
     deterministicScores,
     {
+      analysis_status: "fallback",
+      is_fallback: true,
       target_role: normalizedInput.job_title || topRoles[0]?.role || (language === "ar" ? "[يرجى التأكيد]" : "[Please confirm]"),
       candidate_name: candidateName,
       executive_summary: {
