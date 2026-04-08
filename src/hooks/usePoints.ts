@@ -47,7 +47,7 @@ export function usePoints() {
     void refresh();
   }, [refresh]);
 
-  const canUploadCV = state.cvUploadCount < 3;
+  const canUploadCV = true;
 
   const canAfford = (cost: number) => state.balance >= cost;
 
