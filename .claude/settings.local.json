@@ -6,7 +6,9 @@
       "Bash(python3:*)",
       "Bash(node:*)",
       "Read(//c/Users/Majid/.config/supabase/**)",
-      "Read(//c/Users/Majid/.config/**)"
+      "Read(//c/Users/Majid/.config/**)",
+      "mcp__claude_ai_Supabase__get_publishable_keys",
+      "mcp__claude_ai_Supabase__get_project_url"
     ]
   }
 }
