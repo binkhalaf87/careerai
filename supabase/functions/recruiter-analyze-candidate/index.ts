@@ -201,8 +201,8 @@ serve(async (req) => {
       return jsonResponse({ error: "Missing or too-short candidateText" }, 400);
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not set");
 
     // ── Run the SAME shared core analysis ────────────────────────────────────
     let result: Awaited<ReturnType<typeof callAnalysisAI>>;
@@ -210,7 +210,7 @@ serve(async (req) => {
       result = await callAnalysisAI({
         resumeText: candidateText,
         language,
-        openAIApiKey: OPENAI_API_KEY,
+        geminiApiKey: GEMINI_API_KEY,
       });
     } catch (err: any) {
       if (err?.name === "AbortError") {

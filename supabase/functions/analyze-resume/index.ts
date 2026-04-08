@@ -39,10 +39,10 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY");
 
-    if (!openAIApiKey) {
-      throw new Error("OPENAI_API_KEY is not configured");
+    if (!geminiApiKey) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -76,7 +76,7 @@ serve(async (req) => {
     // ── Run shared core analysis ───────────────────────────────────────────────
     let result: Awaited<ReturnType<typeof callAnalysisAI>>;
     try {
-      result = await callAnalysisAI({ resumeText, language, openAIApiKey });
+      result = await callAnalysisAI({ resumeText, language, geminiApiKey });
     } catch (err: any) {
       if (err?.name === "AbortError") {
         return jsonResponse({ error: "AI analysis timed out" }, 504);

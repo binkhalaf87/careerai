@@ -22,7 +22,7 @@ import { validateAiOutput, buildRetryPrefix, VALIDATION } from "./output-validat
 // Change this ONE constant to update the model for ALL resume analysis flows.
 // Do NOT hardcode a model string anywhere else in this file or in wrapper functions.
 
-export const ANALYSIS_MODEL = "gpt-4o" as const;
+export const ANALYSIS_MODEL = "gemini-2.5-flash" as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -506,6 +506,18 @@ export function tryExtractJsonFromText(content: string): any | null {
   return tryParseJsonCandidate(content);
 }
 
+function getGeminiCandidateText(data: any): string {
+  const parts = Array.isArray(data?.candidates?.[0]?.content?.parts)
+    ? data.candidates[0].content.parts
+    : [];
+
+  return parts
+    .map((part: any) => asString(part?.text))
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
 function describeAnalysisShape(analysis: NormalizedAnalysis): string {
   return JSON.stringify({
     target_role: analysis.target_role,
@@ -987,7 +999,7 @@ FIELD-BY-FIELD INSTRUCTIONS:
 export interface CallAnalysisOptions {
   resumeText: string;
   language: string;
-  openAIApiKey: string;
+  geminiApiKey: string;
   timeoutMs?: number;
 }
 
@@ -1084,7 +1096,7 @@ function buildDeterministicFallback(
 }
 
 export async function callAnalysisAI(opts: CallAnalysisOptions): Promise<CallAnalysisResult> {
-  const { resumeText, language, openAIApiKey, timeoutMs = 170_000 } = opts;
+  const { resumeText, language, geminiApiKey, timeoutMs = 170_000 } = opts;
 
   // ── Layer A: Deterministic normalization + ATS scoring (no AI) ─────────────
   const rawText = resumeText ?? "";
@@ -1127,32 +1139,35 @@ export async function callAnalysisAI(opts: CallAnalysisOptions): Promise<CallAna
 
     let response: Response;
     try {
-      response = await fetch("https://api.openai.com/v1/chat/completions", {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${ANALYSIS_MODEL}:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${openAIApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: ANALYSIS_MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
+          systemInstruction: {
+            parts: [{ text: systemPrompt }],
+          },
+          contents: [
             {
               role: "user",
-              // On retries: prepend the correction prefix so model knows exactly what to fix.
-              // Temperature is raised slightly on retries to avoid the model repeating itself.
-              content: isRetry ? `${retryPrefix}
+              parts: [
+                {
+                  text: isRetry ? `${retryPrefix}
 
 ---
 
 ${userPrompt}` : userPrompt,
+                },
+              ],
             },
           ],
-          tools: [toolSchema],
-          tool_choice: { type: "function", function: { name: "submit_analysis" } },
-          // Slight temperature increase on retries to break out of a bad mode
-          temperature: isRetry ? 0.35 : 0.2,
-          max_tokens: 8000,
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseJsonSchema: toolSchema.function.parameters,
+            temperature: isRetry ? 0.35 : 0.2,
+            maxOutputTokens: 8000,
+          },
         }),
         signal: controller.signal,
       });
@@ -1166,7 +1181,7 @@ ${userPrompt}` : userPrompt,
       if (response.status === 429) {
         // Retry with exponential backoff instead of failing immediately
         const backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 16000);
-        console.warn(`[analyze] OpenAI rate limit (attempt ${attempt}), retrying in ${backoffMs}ms`);
+        console.warn(`[analyze] Gemini rate limit (attempt ${attempt}), retrying in ${backoffMs}ms`);
         await new Promise((r) => setTimeout(r, backoffMs));
         continue;
       }
@@ -1174,19 +1189,19 @@ ${userPrompt}` : userPrompt,
       if (response.status === 500 || response.status === 503) {
         // OpenAI transient server errors — retry with backoff
         const backoffMs = Math.min(3000 * attempt, 15000);
-        console.warn(`[analyze] OpenAI server error ${response.status} (attempt ${attempt}), retrying in ${backoffMs}ms. Body: ${errText.slice(0, 200)}`);
+        console.warn(`[analyze] Gemini server error ${response.status} (attempt ${attempt}), retrying in ${backoffMs}ms. Body: ${errText.slice(0, 200)}`);
         await new Promise((r) => setTimeout(r, backoffMs));
         continue;
       }
       console.error(`[analyze] AI gateway error (attempt ${attempt}):`, response.status, errText.slice(0, 500));
       if (isRecoverableAiSchemaError(response.status, errText)) {
-        console.warn(`[analyze] OpenAI rejected the tool schema/request. Falling back to deterministic analysis. Raw error: ${truncateForLog(errText, 1000)}`);
+        console.warn(`[analyze] Gemini rejected the response schema/request. Falling back to deterministic analysis. Raw error: ${truncateForLog(errText, 1000)}`);
         const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
         logFinalAnalysis("Final normalized response shape (schema fallback)", analysis);
         return { analysis, normalizedInput, deterministicScores };
       }
       if (shouldFallbackForOpenAiClientError(response.status, errText)) {
-        console.warn(`[analyze] OpenAI returned a recoverable client error. Falling back to deterministic analysis. Status=${response.status}; Raw error: ${truncateForLog(errText, 1000)}`);
+        console.warn(`[analyze] Gemini returned a recoverable client error. Falling back to deterministic analysis. Status=${response.status}; Raw error: ${truncateForLog(errText, 1000)}`);
         const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
         logFinalAnalysis("Final normalized response shape (client-error fallback)", analysis);
         return { analysis, normalizedInput, deterministicScores };
@@ -1200,17 +1215,14 @@ ${userPrompt}` : userPrompt,
     try {
       data = await response.json();
     } catch (error) {
-      console.error(`[analyze] Failed to decode OpenAI JSON response (attempt ${attempt}):`, error);
+      console.error(`[analyze] Failed to decode Gemini JSON response (attempt ${attempt}):`, error);
       const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
       logFinalAnalysis("Final normalized response shape (response-json fallback)", analysis);
       return { analysis, normalizedInput, deterministicScores };
     }
-    const message = data?.choices?.[0]?.message;
-    const toolCall = message?.tool_calls?.[0];
-
     let parsedRaw: any = null;
-    const rawToolArguments = typeof toolCall?.function?.arguments === "string" ? toolCall.function.arguments : "";
-    const rawContentText = getMessageContentAsText(message?.content);
+    const rawToolArguments = "";
+    const rawContentText = getGeminiCandidateText(data);
 
     if (rawToolArguments) {
       console.info(`[analyze] Raw AI tool arguments (attempt ${attempt}): ${truncateForLog(rawToolArguments)}`);
