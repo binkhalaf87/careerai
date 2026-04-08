@@ -534,6 +534,17 @@ function isRecoverableAiSchemaError(status: number, errText: string): boolean {
     text.includes("including every key in properties");
 }
 
+function shouldFallbackForOpenAiClientError(status: number, errText: string): boolean {
+  if ([400, 408, 409, 413, 422].includes(status)) return true;
+
+  const text = errText.toLowerCase();
+  return text.includes("context_length") ||
+    text.includes("maximum context length") ||
+    text.includes("prompt is too long") ||
+    text.includes("too many tokens") ||
+    text.includes("unprocessable entity");
+}
+
 // ─── Merge Layer A (deterministic) + Layer B (AI narrative) ─────────────────
 //
 // Layer A scores are AUTHORITATIVE — AI cannot override ats_score or section_scores.
@@ -1172,6 +1183,12 @@ ${userPrompt}` : userPrompt,
         console.warn(`[analyze] OpenAI rejected the tool schema/request. Falling back to deterministic analysis. Raw error: ${truncateForLog(errText, 1000)}`);
         const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
         logFinalAnalysis("Final normalized response shape (schema fallback)", analysis);
+        return { analysis, normalizedInput, deterministicScores };
+      }
+      if (shouldFallbackForOpenAiClientError(response.status, errText)) {
+        console.warn(`[analyze] OpenAI returned a recoverable client error. Falling back to deterministic analysis. Status=${response.status}; Raw error: ${truncateForLog(errText, 1000)}`);
+        const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
+        logFinalAnalysis("Final normalized response shape (client-error fallback)", analysis);
         return { analysis, normalizedInput, deterministicScores };
       }
       // Other gateway errors (400, 401, etc.) are not retried
