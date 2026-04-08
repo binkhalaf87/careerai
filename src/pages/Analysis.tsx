@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload,
@@ -1345,6 +1345,12 @@ const Analysis = () => {
       }}
     >
       <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+        <DialogTitle className="sr-only">
+          {language === "ar" ? "جارٍ تحليل السيرة الذاتية" : "Analyzing Resume"}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          {language === "ar" ? "يرجى الانتظار بينما يحلل الذكاء الاصطناعي سيرتك الذاتية" : "Please wait while AI analyzes your resume"}
+        </DialogDescription>
         <div className="space-y-6 text-center py-4">
           <motion.div
             key={stage}

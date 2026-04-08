@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Buffer } from "https://deno.land/std@0.168.0/node/buffer.ts";
+import { encodeBase64 } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import pdf from "npm:pdf-parse@1.1.1/lib/pdf-parse.js";
 import JSZip from "npm:jszip@3.10.1";
 
@@ -855,7 +856,49 @@ function heuristicSectionDetection(text: string, language: "ar" | "en"): Structu
   return processed;
 }
 
-// ── Main handler (deterministic only — NO AI) ───────────────────
+// ── AI OCR fallback — called when pdf-parse yields < 50 chars ───
+async function extractTextWithAI(arrayBuffer: ArrayBuffer, fileName: string, openAIApiKey: string): Promise<string> {
+  const base64 = encodeBase64(new Uint8Array(arrayBuffer));
+  const fileData = `data:application/pdf;base64,${base64}`;
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAIApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      temperature: 0,
+      max_tokens: 4000,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "file",
+              file: { filename: fileName || "resume.pdf", file_data: fileData },
+            },
+            {
+              type: "text",
+              text: "Extract ALL text from this resume/CV file. Return the raw text content only, preserving sections and bullet points. Do NOT summarize, translate, or analyze — extract the exact text as written.",
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenAI OCR failed (${res.status}): ${errText.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return String(data?.choices?.[0]?.message?.content || "").trim();
+}
+
+// ── Main handler ─────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -900,9 +943,34 @@ serve(async (req) => {
         .replace(/\n{3,}/g, "\n\n"),
     );
 
+    // ── AI OCR fallback — for image/scanned PDFs ─────────────────
+    const isPdf = fileName.endsWith(".pdf") || fileType === "application/pdf";
+    const needsOcr = text.length < 50 && uint8Array.length > 5000 && isPdf;
+    if (needsOcr) {
+      const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
+      if (openAIApiKey) {
+        try {
+          console.log(`[extract-text] Attempting AI OCR — standard extraction yielded only ${text.length} chars`);
+          const aiText = await extractTextWithAI(arrayBuffer, file.name || "resume.pdf", openAIApiKey);
+          if (aiText.length > text.length) {
+            text = cleanArtifacts(
+              aiText
+                .replace(/\r\n/g, "\n")
+                .replace(/\r/g, "\n")
+                .replace(/[ \t]+/g, " ")
+                .replace(/\n{3,}/g, "\n\n"),
+            );
+            console.log(`[extract-text] AI OCR succeeded — extracted ${text.length} chars`);
+          }
+        } catch (ocrErr) {
+          console.error("[extract-text] AI OCR failed:", ocrErr);
+        }
+      }
+    }
+
     const language = detectLanguage(text);
     const { quality, score } = evaluateQuality(text, uint8Array.length);
-    const isOcrNeeded = text.length < 20 && uint8Array.length > 10000;
+    const isOcrNeeded = needsOcr && text.length < 50;
 
     let structured: StructuredResume = { ...EMPTY_STRUCTURED };
     if (!isOcrNeeded && text.length > 20) {

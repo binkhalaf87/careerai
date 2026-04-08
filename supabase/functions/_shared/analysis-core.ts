@@ -973,6 +973,7 @@ ${userPrompt}` : userPrompt,
           tool_choice: { type: "function", function: { name: "submit_analysis" } },
           // Slight temperature increase on retries to break out of a bad mode
           temperature: isRetry ? 0.35 : 0.2,
+          max_tokens: 8000,
         }),
         signal: controller.signal,
       });
@@ -991,8 +992,15 @@ ${userPrompt}` : userPrompt,
         continue;
       }
       if (response.status === 402) throw Object.assign(new Error("credits_exhausted"), { status: 402 });
-      console.error(`[analyze] AI gateway error (attempt ${attempt}):`, response.status, errText);
-      // Gateway errors are not retried — they are infrastructure failures
+      if (response.status === 500 || response.status === 503) {
+        // OpenAI transient server errors — retry with backoff
+        const backoffMs = Math.min(3000 * attempt, 15000);
+        console.warn(`[analyze] OpenAI server error ${response.status} (attempt ${attempt}), retrying in ${backoffMs}ms. Body: ${errText.slice(0, 200)}`);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+      console.error(`[analyze] AI gateway error (attempt ${attempt}):`, response.status, errText.slice(0, 500));
+      // Other gateway errors (400, 401, etc.) are not retried
       throw Object.assign(new Error("ai_gateway_error"), { status: 502 });
     }
 
