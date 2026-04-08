@@ -679,7 +679,8 @@ OUTPUT FORMAT
   • You MUST respond exclusively via the submit_analysis tool call.
   • Do NOT output any prose, markdown, commentary, or explanation outside the tool call.
   • Every field in the schema is REQUIRED. Missing fields will cause a system failure.
-  • All scores are integers 0–100. No decimals. No nulls. No strings like "N/A".
+  • Do NOT include any numeric score fields anywhere in the tool output.
+  • Do NOT include null, markdown, code fences, or explanatory text outside the tool call.
 
 EVIDENCE REQUIREMENT (most critical rule)
   • Every strength, risk, score, and recommendation MUST cite specific evidence from the resume.
@@ -769,27 +770,7 @@ FIELD-BY-FIELD INSTRUCTIONS:
 ② candidate_name
    Extract from resume header. If absent, write "[Please confirm]".
 
-③ ats_score (integer 0–100)
-   Weighted average of section_scores with these weights:
-     keyword_optimization ×30% + experience_quality ×25% + resume_formatting ×15%
-     + skills_relevance ×15% + career_progression ×10% + education_strength ×3%
-     + contact_information_quality ×2%
-   Round to nearest integer. Must stay within ±8 of the weighted result.
-
-④ section_scores (all integers 0–100)
-   resume_formatting        — Single/double column clarity, page count (1–2 ideal), header legibility,
-                              consistent bullet style, no tables/graphics that confuse ATS parsers.
-   keyword_optimization     — Count of role-critical keywords present vs. expected for the target role
-                              in GCC postings. Penalise heavily for missing core terminology.
-   experience_quality       — Ratio of achievement bullets to duty bullets. Penalise "responsible for" language.
-                              Reward quantified outcomes (%, SAR, headcount, timeframe).
-   career_progression       — Upward title trajectory, logical employer sequence, gaps > 6 months unexplained = -15pts.
-   skills_relevance         — Hard skills + certifications match to target role requirements in GCC market.
-   education_strength       — Degree relevance to target role, recency, institution reputation in GCC/MENA.
-   contact_information_quality — Presence of: full name, phone (with country code), professional email,
-                                  LinkedIn URL, city/country, nationality or Iqama status if relevant.
-
-⑤ executive_summary
+③ executive_summary
    candidate_level          — Exactly one of: "junior" | "mid" | "senior" | "executive"
                               Base on total years of experience: <3y=junior, 3–7y=mid, 7–15y=senior, 15y+=executive.
    summary_paragraphs       — 3 paragraphs:
@@ -808,17 +789,17 @@ FIELD-BY-FIELD INSTRUCTIONS:
                               (c) state the likely recruiter reaction.
                               Format: "[Risk]: [Evidence of problem] → [Recruiter impact]"
 
-⑥ ats_breakdown (7 categories — formatting, sections, keywords, experience, education, skills, contact_info)
-   Each category requires 4 fields:
-   score                    — Integer 0–100. Must align with corresponding section_score.
+⑥ ats_breakdown_narratives (7 categories — formatting, sections, keywords, experience, education, skills, contact_info)
+   Each category requires ONLY these 3 fields:
    current_state            — One sentence describing what is actually present in the resume right now.
    problem                  — One sentence stating the specific ATS or recruiter problem this causes.
                               For keywords: LIST the top 5 missing keywords by name.
    recommended_improvement  — One imperative sentence with the exact fix.
                               For keywords: name the exact keywords and the exact section to add them to.
+   Do NOT include a score field.
 
-⑦ recruiter_analysis (5 dimensions)
-   Each dimension: score (0–100) + comment.
+⑦ recruiter_analysis_comments (5 dimensions)
+   Each dimension requires ONLY a comment string.
    Comment rules: minimum 2 sentences, must reference specific resume content, no generic observations.
    first_impression         — What does a GCC recruiter think within the first 6 seconds of seeing this?
    career_clarity           — Is the professional direction immediately obvious? Does the resume tell one story?
@@ -902,6 +883,90 @@ export interface CallAnalysisResult {
   normalizedInput: import("./resume-normalizer.ts").NormalizedResumeInput;
   /** Layer A scores — stable, code-driven, never overridden by AI. */
   deterministicScores: DeterministicScores;
+}
+
+function buildDeterministicFallback(
+  deterministicScores: DeterministicScores,
+  normalizedInput: import("./resume-normalizer.ts").NormalizedResumeInput,
+  language: string,
+): NormalizedAnalysis {
+  const placeholder = language === "ar" ? "تعذر استكمال السرد الذكي، لكن تم إظهار التقييم الحتمي." : "AI narrative could not be completed, but deterministic scoring is available.";
+  const candidateName = normalizedInput.name?.trim() || (language === "ar" ? "[يرجى التأكيد]" : "[Please confirm]");
+  const inferredRoles = [normalizedInput.job_title, ...(normalizedInput.experience || []).slice(0, 2)]
+    .filter(Boolean)
+    .map((role) => String(role).trim())
+    .filter((role, index, arr) => arr.indexOf(role) === index)
+    .slice(0, 3);
+  const topRoles = inferredRoles.map((role: string) => ({
+    role,
+    why_it_fits: placeholder,
+  }));
+
+  return mergeAnalysisLayers(
+    deterministicScores,
+    {
+      target_role: normalizedInput.job_title || topRoles[0]?.role || (language === "ar" ? "[يرجى التأكيد]" : "[Please confirm]"),
+      candidate_name: candidateName,
+      executive_summary: {
+        candidate_level: deterministicScores.candidate_level,
+        summary_paragraphs: placeholder,
+        best_fit_roles: topRoles.map((r) => r.role),
+        top_strengths: [placeholder, placeholder, placeholder],
+        main_risks: [placeholder, placeholder, placeholder],
+      },
+      ats_breakdown_narratives: {
+        formatting: { current_state: placeholder, problem: placeholder, recommended_improvement: placeholder },
+        sections: { current_state: placeholder, problem: placeholder, recommended_improvement: placeholder },
+        keywords: { current_state: placeholder, problem: placeholder, recommended_improvement: placeholder },
+        experience: { current_state: placeholder, problem: placeholder, recommended_improvement: placeholder },
+        education: { current_state: placeholder, problem: placeholder, recommended_improvement: placeholder },
+        skills: { current_state: placeholder, problem: placeholder, recommended_improvement: placeholder },
+        contact_info: { current_state: placeholder, problem: placeholder, recommended_improvement: placeholder },
+      },
+      recruiter_analysis_comments: {
+        first_impression: placeholder,
+        career_clarity: placeholder,
+        achievement_strength: placeholder,
+        role_alignment: placeholder,
+        professional_presentation: placeholder,
+      },
+      career_recommendations: {
+        top_roles: topRoles,
+        skills_to_improve: normalizedInput.skills?.slice(0, 5) || [],
+        thirty_sixty_ninety_day_plan: {
+          thirty_days: placeholder,
+          sixty_days: placeholder,
+          ninety_days: placeholder,
+        },
+        certifications_recommended: normalizedInput.certifications?.slice(0, 5) || [],
+        linkedin_improvements: placeholder,
+      },
+      salary_estimation: {
+        salary_table: [],
+        offer_range_low: 0,
+        offer_range_high: 0,
+        negotiation_target: 0,
+        anchor: 0,
+        walk_away: 0,
+      },
+      resume_rewrite: { full_resume: placeholder },
+      quick_improvements: [
+        { priority: "high", description: placeholder, action_step: placeholder },
+        { priority: "high", description: placeholder, action_step: placeholder },
+        { priority: "medium", description: placeholder, action_step: placeholder },
+        { priority: "medium", description: placeholder, action_step: placeholder },
+        { priority: "low", description: placeholder, action_step: placeholder },
+      ],
+      interview_questions: [
+        { question: placeholder, suggested_answer_direction: placeholder },
+        { question: placeholder, suggested_answer_direction: placeholder },
+        { question: placeholder, suggested_answer_direction: placeholder },
+        { question: placeholder, suggested_answer_direction: placeholder },
+        { question: placeholder, suggested_answer_direction: placeholder },
+      ],
+    },
+    language,
+  );
 }
 
 export async function callAnalysisAI(opts: CallAnalysisOptions): Promise<CallAnalysisResult> {
@@ -1052,10 +1117,9 @@ ${userPrompt}` : userPrompt,
         const analysis = mergeAnalysisLayers(deterministicScores, parsedRaw, language);
         return { analysis, normalizedInput, deterministicScores };
       }
-      throw Object.assign(
-        new Error(`AI output failed ${decision.failures.length} quality rules after ${VALIDATION.MAX_ATTEMPTS} attempts`),
-        { status: 502, validation_failures: decision.failures }
-      );
+      console.warn(`[analyze] Falling back to deterministic-only analysis after validation failure.`);
+      const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
+      return { analysis, normalizedInput, deterministicScores };
     }
 
     // decision.action === "retry" — prepare correction prefix for next loop
@@ -1065,5 +1129,7 @@ ${userPrompt}` : userPrompt,
   }
 
   // Should never reach here (loop covers 1..MAX_ATTEMPTS and always returns/throws)
-  throw Object.assign(new Error("analysis_retry_exhausted"), { status: 502 });
+  console.warn(`[analyze] Retries exhausted. Returning deterministic fallback.`);
+  const analysis = buildDeterministicFallback(deterministicScores, normalizedInput, language);
+  return { analysis, normalizedInput, deterministicScores };
 }
