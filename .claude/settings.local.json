@@ -8,7 +8,11 @@
       "Read(//c/Users/Majid/.config/supabase/**)",
       "Read(//c/Users/Majid/.config/**)",
       "mcp__claude_ai_Supabase__get_publishable_keys",
-      "mcp__claude_ai_Supabase__get_project_url"
+      "mcp__claude_ai_Supabase__get_project_url",
+      "Read(//c/Users/Majid/.claude/**)",
+      "Read(//c/Users/Majid/AppData/Roaming/**)",
+      "Read(//c/Users/Majid/.supabase/**)",
+      "Bash(rm:*)"
     ]
   }
 }
