@@ -1,0 +1,360 @@
+../_shared/resume-normalizer.ts
+---
+/**
+ * TALENTRY — Deterministic Resume Normalizer (Deno-compatible)
+ * Pure TypeScript. Zero AI. Shared by job seeker + recruiter analysis flows.
+ */
+
+export interface NormalizedResumeInput {
+  name: string | null;
+  job_title: string | null;
+  summary: string | null;
+  skills: string[];
+  experience: string[];
+  education: string[] | null;
+  certifications: string[] | null;
+  raw_text: string;
+}
+
+type SectionKey = "summary" | "experience" | "skills" | "education" | "certifications";
+
+const SECTION_PATTERNS: Array<{ key: SectionKey; patterns: RegExp[] }> = [
+  {
+    key: "summary",
+    patterns: [/^professional\s+summary$/i, /^summary$/i, /^profile$/i, /^career\s+summary$/i, /^objective$/i, /^about\s+me$/i, /^الملخص$/i, /^الملخص\s+المهني$/i, /^الهدف\s+الوظيفي$/i, /^نبذة$/i, /^نبذه$/i, /^نبذة\s+مهنية$/i],
+  },
+  {
+    key: "experience",
+    patterns: [/^experience$/i, /^work\s+experience$/i, /^employment$/i, /^employment\s+history$/i, /^professional\s+experience$/i, /^work\s+history$/i, /^career\s+history$/i, /^الخبرة$/i, /^الخبرات$/i, /^الخبرة\s+المهنية$/i, /^الخبرات\s+العملية$/i, /^السجل\s+الوظيفي$/i],
+  },
+  {
+    key: "skills",
+    patterns: [/^skills$/i, /^technical\s+skills$/i, /^core\s+skills$/i, /^key\s+skills$/i, /^core\s+competencies$/i, /^competencies$/i, /^المهارات$/i, /^مهارات$/i, /^المهارات\s+التقنية$/i, /^الكفاءات$/i, /^المهارات\s+الأساسية$/i],
+  },
+  {
+    key: "education",
+    patterns: [/^education$/i, /^academic$/i, /^academic\s+background$/i, /^qualifications?$/i, /^التعليم$/i, /^المؤهلات$/i, /^المؤهلات\s+العلمية$/i, /^الخلفية\s+الأكاديمية$/i],
+  },
+  {
+    key: "certifications",
+    patterns: [/^certifications?$/i, /^certificates?$/i, /^licenses?$/i, /^courses?$/i, /^training$/i, /^الشهادات$/i, /^الشهادات\s+المهنية$/i, /^الدورات$/i, /^الدورات\s+التدريبية$/i, /^الرخص$/i, /^الاعتمادات$/i],
+  },
+];
+
+const NOISE_PATTERNS: RegExp[] = [
+  /^page\s+\d+(\s+of\s+\d+)?$/i,
+  /^صفحة\s+\d+$/i,
+  /^curriculum\s+vitae$/i,
+  /^resume$/i,
+  /^\s*cv\s*$/i,
+  /^\d+\s*\/\s*\d+$/,
+  /^[-_=*•▪◦]{3,}$/,
+];
+
+const JOB_TITLE_HINTS = /engineer|manager|specialist|supervisor|analyst|developer|consultant|officer|lead|director|coordinator|assistant|administrator|architect|designer|executive|technician|support|hr|accountant|marketing|sales|network|security|project|مهندس|مدير|أخصائي|مشرف|محلل|مطور|استشاري|مسؤول|منسق|فني|محاسب|موارد بشرية|دعم فني|شبكات|أمن|مبيعات|تسويق/i;
+const SKILL_BANK = [
+  "sql","oracle","excel","power bi","powerbi","python","java","javascript","typescript","react","node","aws","azure","docker","kubernetes","git","linux","windows server","ccna","fortinet","bgp","ospf","mpls","vrf","ipvpn","dia","jira","sap","erp","crm","salesforce","hubspot","seo","sem","google analytics","autocad","revit","pmp","itil","troubleshooting","technical support","customer service","networking","saudization","gosi","nitaqat","recruitment","onboarding","payroll","hrsd","data analysis","sql server","oracle db","windows","microsoft office"
+];
+const EXPERIENCE_HINT = /(19|20)\d{2}|present|current|now|till now|to date|حتى الآن|حالياً|الآن|شركة|company|ltd|llc|inc|corp|group|مؤسسة|مجموعة/i;
+const EDUCATION_HINT = /bachelor|master|diploma|phd|doctorate|university|college|degree|graduated|education|بكالوريوس|ماجستير|دبلوم|دكتوراه|جامعة|كلية|مؤهل|تعليم/i;
+const CERT_HINT = /certif|certificate|license|course|training|ccna|pmp|itil|aws|azure|nse|jncia|jncis|osha|شهادة|دورة|اعتماد|رخصة/i;
+
+function stripInvisible(text: string): string {
+  return text
+    .replace(/\x00/g, "")
+    .replace(/[\u200B\u200C\u200D\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\t/g, " ");
+}
+
+function collapseSpaces(line: string): string {
+  return line.replace(/[ ]+/g, " ").trim();
+}
+
+function normalizeHeadingText(line: string): string {
+  return line.replace(/^#+\s*/, "").replace(/[|]+/g, " ").replace(/[:：\-–—]+$/, "").replace(/\s+/g, " ").trim();
+}
+
+function detectSection(line: string): SectionKey | null {
+  const normalized = normalizeHeadingText(line);
+  if (!normalized || normalized.length > 70) return null;
+  for (const item of SECTION_PATTERNS) {
+    if (item.patterns.some((rx) => rx.test(normalized))) return item.key;
+  }
+  return null;
+}
+
+function isBulletLine(line: string): boolean {
+  return /^[•▪◦*\-–—]\s+/.test(line.trim());
+}
+
+function looksLikeContact(line: string): boolean {
+  return /@/.test(line) || /\+?\d[\d\s()\-]{6,}/.test(line) || /linkedin|github|portfolio|email|mobile|phone|tel|address|location|البريد|الهاتف|الجوال|العنوان/i.test(line);
+}
+
+function looksLikeName(line: string): boolean {
+  if (!line || line.length > 60 || looksLikeContact(line) || detectSection(line)) return false;
+  if (/\d/.test(line)) return false;
+  const words = line.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 6 && /^[A-Za-z\u0600-\u06FF\s.'\-]+$/.test(line);
+}
+
+function looksLikeJobTitle(line: string): boolean {
+  return !!line && line.length <= 90 && !looksLikeContact(line) && !detectSection(line) && JOB_TITLE_HINTS.test(line);
+}
+
+function normalizeLine(line: string): string {
+  return collapseSpaces(stripInvisible(line))
+    .replace(/^\s*[•▪◦]+\s*/g, "• ")
+    .replace(/^\s*[-–—*]+\s*/g, "- ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim();
+}
+
+function mergeWrappedLines(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    if (!out.length) {
+      out.push(line);
+      continue;
+    }
+    const prev = out[out.length - 1];
+    const startsNewItem = isBulletLine(line) || looksLikeContact(line) || !!detectSection(line) || looksLikeName(line) || looksLikeJobTitle(line);
+    const prevIsSoft = /[,;:\-–—]$/.test(prev) || (prev.length < 55 && !isBulletLine(prev));
+    if (prevIsSoft && !startsNewItem) {
+      out[out.length - 1] = `${prev} ${line}`.replace(/\s+/g, " ").trim();
+    } else {
+      out.push(line);
+    }
+  }
+  return out;
+}
+
+function cleanResumeText(rawText: string): string {
+  return stripInvisible(rawText)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ ]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function shouldDropLine(line: string): boolean {
+  if (!line) return true;
+  if (NOISE_PATTERNS.some((rx) => rx.test(line))) return true;
+  if (/^[^\w\u0600-\u06FF]+$/.test(line) && line.length < 4) return true;
+  return false;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const clean = value.trim().replace(/^[•▪◦*\-–—]\s*/, "").trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
+function splitListLikeText(text: string): string[] {
+  return uniqueStrings(
+    text
+      .split(/\n|\||•|▪|◦|;|،|,/)
+      .map((part) => part.trim())
+      .filter((part) => part.length >= 2),
+  );
+}
+
+function extractKeywords(rawText: string): string[] {
+  const lowered = rawText.toLowerCase();
+  const found = SKILL_BANK.filter((skill) => lowered.includes(skill.toLowerCase()));
+  const listCandidates = rawText
+    .split("\n")
+    .filter((line) => line.includes(",") || isBulletLine(line))
+    .flatMap((line) => splitListLikeText(line))
+    .filter((item) => item.length >= 2 && item.length <= 40 && !EXPERIENCE_HINT.test(item) && !EDUCATION_HINT.test(item));
+
+  return uniqueStrings([...found, ...listCandidates]).slice(0, 20);
+}
+
+function extractExperienceBlocks(rawText: string): string[] {
+  const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+  const blocks: string[] = [];
+  let buffer: string[] = [];
+
+  const flush = () => {
+    if (!buffer.length) return;
+    const joined = buffer.join(" ").replace(/\s+/g, " ").trim();
+    if (joined.length >= 20) blocks.push(joined);
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const jobish = JOB_TITLE_HINTS.test(line) || EXPERIENCE_HINT.test(line);
+    if (jobish && buffer.length >= 2) flush();
+    if (jobish || buffer.length) {
+      buffer.push(line.replace(/^[•▪◦*\-–—]\s*/, "").trim());
+      if (buffer.length >= 4) flush();
+    }
+  }
+  flush();
+
+  const fallbackJoined = lines
+    .filter((line) => JOB_TITLE_HINTS.test(line) || EXPERIENCE_HINT.test(line))
+    .slice(0, 6);
+
+  return uniqueStrings(blocks.length ? blocks : fallbackJoined).slice(0, 8);
+}
+
+function extractNameAndTitle(lines: string[]): { name: string | null; job_title: string | null } {
+  let name: string | null = null;
+  let job_title: string | null = null;
+  for (const line of lines.slice(0, 12)) {
+    if (!name && looksLikeName(line)) {
+      name = line;
+      continue;
+    }
+    if (!job_title && looksLikeJobTitle(line)) {
+      job_title = line;
+    }
+  }
+  return { name, job_title };
+}
+
+function arrayToParagraph(lines: string[]): string | null {
+  const text = uniqueStrings(lines).join(" ").replace(/\s+/g, " ").trim();
+  return text || null;
+}
+
+function normalizeSectionArray(lines: string[]): string[] {
+  return uniqueStrings(lines)
+    .map((line) => line.replace(/^[•▪◦*\-–—]\s*/, "").trim())
+    .filter(Boolean);
+}
+
+export function normalizeResumeText(rawText: string): NormalizedResumeInput {
+  if (!rawText || !rawText.trim()) {
+    return {
+      name: null,
+      job_title: null,
+      summary: null,
+      skills: [],
+      experience: [],
+      education: null,
+      certifications: null,
+      raw_text: "",
+    };
+  }
+
+  const cleaned = cleanResumeText(rawText);
+  const rawLines = cleaned
+    .split("\n")
+    .map(normalizeLine)
+    .filter((line) => !shouldDropLine(line));
+  const lines = mergeWrappedLines(rawLines);
+  const raw_text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+
+  const buckets: Record<SectionKey, string[]> = {
+    summary: [],
+    experience: [],
+    skills: [],
+    education: [],
+    certifications: [],
+  };
+
+  const { name, job_title } = extractNameAndTitle(lines);
+  let currentSection: SectionKey | null = null;
+
+  for (const line of lines) {
+    const sectionKey = detectSection(line);
+    if (sectionKey) {
+      currentSection = sectionKey;
+      continue;
+    }
+    if (looksLikeContact(line)) continue;
+    if (line === name || line === job_title) continue;
+
+    if (currentSection) {
+      buckets[currentSection].push(line);
+      continue;
+    }
+
+    if (CERT_HINT.test(line)) {
+      buckets.certifications.push(line);
+    } else if (EDUCATION_HINT.test(line)) {
+      buckets.education.push(line);
+    } else if (JOB_TITLE_HINTS.test(line) || EXPERIENCE_HINT.test(line)) {
+      buckets.experience.push(line);
+    } else if (line.includes(",") || isBulletLine(line) || SKILL_BANK.some((skill) => line.toLowerCase().includes(skill))) {
+      buckets.skills.push(line);
+    } else if (buckets.summary.join(" ").length < 1200) {
+      buckets.summary.push(line);
+    }
+  }
+
+  let skills = normalizeSectionArray(buckets.skills.flatMap((line) => splitListLikeText(line)));
+  let experience = normalizeSectionArray(buckets.experience);
+  let education = normalizeSectionArray(buckets.education);
+  let certifications = normalizeSectionArray(buckets.certifications);
+  const summary = arrayToParagraph(buckets.summary);
+
+  if (skills.length === 0 || experience.length === 0) {
+    const fallbackSkills = extractKeywords(raw_text);
+    const fallbackExperience = extractExperienceBlocks(raw_text);
+    if (skills.length === 0) skills = fallbackSkills;
+    if (experience.length === 0) experience = fallbackExperience;
+  }
+
+  if (skills.length < 3 && raw_text.length > 120) {
+    skills = uniqueStrings([...skills, ...extractKeywords(raw_text)]).slice(0, 20);
+  }
+
+  if (experience.length === 0 && raw_text.length > 120) {
+    experience = extractExperienceBlocks(raw_text);
+  }
+
+  if (education.length === 0) education = uniqueStrings(lines.filter((line) => EDUCATION_HINT.test(line))).slice(0, 6);
+  if (certifications.length === 0) certifications = uniqueStrings(lines.filter((line) => CERT_HINT.test(line))).slice(0, 8);
+
+  return {
+    name: name ?? null,
+    job_title: job_title ?? null,
+    summary,
+    skills,
+    experience,
+    education: education.length ? education : null,
+    certifications: certifications.length ? certifications : null,
+    raw_text,
+  };
+}
+
+function sectionToText(value: string[] | string | null | undefined): string {
+  if (!value) return "";
+  if (Array.isArray(value)) return value.join("\n").trim();
+  return value.trim();
+}
+
+export function prepareTextForPrompt(normalized: NormalizedResumeInput): string {
+  const parts: string[] = [];
+  const weakStructure = normalized.skills.length < 3 || normalized.experience.length < 1;
+
+  if (normalized.name) parts.push(`NAME: ${normalized.name}`);
+  if (normalized.job_title) parts.push(`CURRENT/TARGET TITLE: ${normalized.job_title}`);
+  if (weakStructure) parts.push(`NOTE: The resume is unstructured. Extract missing sections before analysis.`);
+  if (normalized.summary) parts.push(`\n── SUMMARY ──\n${normalized.summary}`);
+  if (normalized.experience.length) parts.push(`\n── EXPERIENCE ──\n${sectionToText(normalized.experience)}`);
+  if (normalized.skills.length) parts.push(`\n── SKILLS ──\n${sectionToText(normalized.skills)}`);
+  if (normalized.education?.length) parts.push(`\n── EDUCATION ──\n${sectionToText(normalized.education)}`);
+  if (normalized.certifications?.length) parts.push(`\n── CERTIFICATIONS ──\n${sectionToText(normalized.certifications)}`);
+  // Always include raw text so AI can catch anything the normalizer missed.
+  // Truncate raw_text to 30K chars to stay well within prompt token limits
+  // while preserving full content for typical resumes (1-3 pages ≈ 3-20K chars).
+  const rawSnippet = normalized.raw_text.length > 30_000
+    ? normalized.raw_text.substring(0, 30_000) + "\n[... truncated for length ...]"
+    : normalized.raw_text;
+  parts.push(`\n── CLEANED RAW TEXT ──\n${rawSnippet}`);
+  return parts.join("\n").trim();
+}

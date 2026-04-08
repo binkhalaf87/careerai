@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"user_resumes\\\\|extracted_text\\\\|raw_resume_text\" /c/github/careerai/supabase/migrations/*.sql)",
+      "Bash(grep -A 30 \"CREATE TABLE public.user_resumes\" /c/github/careerai/supabase/migrations/*.sql)",
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Read(//c/Users/Majid/.config/supabase/**)",
+      "Read(//c/Users/Majid/.config/**)"
+    ]
+  }
+}

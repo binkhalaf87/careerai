@@ -1,0 +1,368 @@
+../_shared/output-validator.ts
+---
+/**
+ * TALENTRY — AI Output Validator
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Validates raw AI JSON responses BEFORE they reach mergeAnalysisLayers(),
+ * the UI, or the database.
+ *
+ * DESIGN GOALS
+ *   • Catch shallow / generic / malformed AI output early
+ *   • Return a typed decision: pass | retry | repair
+ *   • Never allow an infinite retry loop
+ *   • Keep every rule explicit — no magic thresholds buried in conditions
+ *
+ * USAGE (called inside callAnalysisAI):
+ *   const decision = validateAiOutput(parsedRaw, attempt);
+ *   if (decision.action === "pass")   → proceed to mergeAnalysisLayers()
+ *   if (decision.action === "retry")  → re-call OpenAI with stricter prompt
+ *   if (decision.action === "repair") → use decision.repaired object
+ *   if (decision.action === "fail")   → max retries exceeded; throw structured error
+ */
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS  — every threshold is named; change here only
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const VALIDATION = {
+  /** Maximum AI attempts (attempt 1 = initial call, attempts 2..N = retries) */
+  MAX_ATTEMPTS: 6,
+
+  // ── Structural minimums ────────────────────────────────────────────────────
+  MIN_STRENGTHS:           3,   // executive_summary.top_strengths
+  MIN_RISKS:               3,   // executive_summary.main_risks
+  MIN_IMPROVEMENTS:        5,   // quick_improvements total items
+  MIN_HIGH_IMPROVEMENTS:   2,   // quick_improvements where priority === "high"
+  MIN_INTERVIEW_QUESTIONS: 5,   // interview_questions
+  MIN_SALARY_ROWS:         1,   // salary_estimation.salary_table
+  MIN_REWRITE_WORDS:      50,   // resume_rewrite.full_resume word count
+
+  // ── Keyword gap requirement ────────────────────────────────────────────────
+  /** ats_breakdown_narratives.keywords.problem must name at least this many
+   *  distinct words that look like actual skill/tool names (not generic text) */
+  MIN_KEYWORD_GAPS_NAMED:  2,
+
+  // ── Generic-content detection ──────────────────────────────────────────────
+  /** Phrases that indicate the AI produced a template response, not a
+   *  resume-specific one.  Any match → RETRY. */
+  BANNED_GENERIC_PHRASES: [
+    "strong communication skills",
+    "team player",
+    "fast learner",
+    "results-driven",
+    "detail-oriented",
+    "passionate about",
+    "seeking opportunities",
+    "please confirm",         // only banned if it appears in strengths/risks
+    "highly motivated",
+    "dynamic professional",
+    "[please confirm]",
+    "[يرجى التأكيد]",          // fallback placeholder in strengths = hallucination
+  ] as readonly string[],
+
+  /** Minimum character length for a useful summary_paragraphs */
+  MIN_SUMMARY_CHARS: 80,
+
+  // ── Score repair rules ─────────────────────────────────────────────────────
+  /** If AI somehow returns a score outside this range, we repair it to the
+   *  deterministic engine value rather than retrying the whole call. */
+  VALID_SCORE_MIN: 0,
+  VALID_SCORE_MAX: 100,
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type ValidationAction = "pass" | "retry" | "repair" | "fail";
+
+export interface ValidationFailure {
+  rule: string;
+  detail: string;
+}
+
+export interface ValidationDecision {
+  action: ValidationAction;
+  failures: ValidationFailure[];
+  /** Only set when action === "repair" */
+  repaired?: Record<string, unknown>;
+  /** Human-readable summary for logging */
+  summary: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRIVATE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function asArray(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+
+function asString(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function wordCount(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+function containsGenericPhrase(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const phrase of VALIDATION.BANNED_GENERIC_PHRASES) {
+    if (lower.includes(phrase.toLowerCase())) return phrase;
+  }
+  return null;
+}
+
+/** Check whether a string names at least N real keyword tokens
+ *  (heuristic: word/phrase that is ≥ 3 chars and not purely stopwords) */
+function countNamedKeywords(text: string): number {
+  if (!text) return 0;
+  // Split on commas, semicolons, bullets, newlines
+  const tokens = text
+    .split(/[,;\n•▪\-–]/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 3 && !/^(and|or|the|for|not|any|all|with|from|that|this|missing|absent|lacks?|no |found)$/i.test(t));
+  return tokens.length;
+}
+
+function isScoreValid(v: unknown): boolean {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= VALIDATION.VALID_SCORE_MIN && n <= VALIDATION.VALID_SCORE_MAX;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN VALIDATOR
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Validate a raw AI tool-call output object.
+ *
+ * @param raw      Parsed JSON from the AI tool call (before mergeAnalysisLayers)
+ * @param attempt  Current attempt number (1 = first call, 2/3 = retries)
+ * @returns        ValidationDecision — caller acts on .action
+ */
+export function validateAiOutput(raw: unknown, attempt: number): ValidationDecision {
+  const failures: ValidationFailure[] = [];
+
+  // ── 0. Structural guard — must be a non-null object ─────────────────────────
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {
+      action: attempt >= VALIDATION.MAX_ATTEMPTS ? "fail" : "retry",
+      failures: [{ rule: "malformed_json", detail: "AI output is not a valid JSON object" }],
+      summary: "FAIL: AI returned non-object payload",
+    };
+  }
+
+  const r = raw as Record<string, unknown>;
+
+  // Convenience accessors for nested paths
+  const execSummary   = (r.executive_summary  ?? {}) as Record<string, unknown>;
+  const narratives    = (r.ats_breakdown_narratives ?? r.ats_breakdown ?? {}) as Record<string, unknown>;
+  const keywordsBlock = (narratives.keywords ?? {}) as Record<string, unknown>;
+  const improvements  = asArray(r.quick_improvements);
+  const strengths     = asArray(execSummary.top_strengths);
+  const risks         = asArray(execSummary.main_risks);
+  const questions     = asArray(r.interview_questions);
+  const salaryTable   = asArray((r.salary_estimation as any)?.salary_table);
+  const rewriteText   = asString((r.resume_rewrite as any)?.full_resume);
+  const summaryText   = asString(execSummary.summary_paragraphs);
+
+  // ── Rule 1: top_strengths — must have ≥ 3 items ────────────────────────────
+  if (strengths.length < VALIDATION.MIN_STRENGTHS) {
+    failures.push({
+      rule: "insufficient_strengths",
+      detail: `Got ${strengths.length} strengths, need ≥ ${VALIDATION.MIN_STRENGTHS}`,
+    });
+  }
+
+  // ── Rule 2: main_risks — must have ≥ 3 items ───────────────────────────────
+  if (risks.length < VALIDATION.MIN_RISKS) {
+    failures.push({
+      rule: "insufficient_risks",
+      detail: `Got ${risks.length} risks, need ≥ ${VALIDATION.MIN_RISKS}`,
+    });
+  }
+
+  // ── Rule 3: quick_improvements — total ≥ 5 AND ≥ 2 marked "high" ──────────
+  if (improvements.length < VALIDATION.MIN_IMPROVEMENTS) {
+    failures.push({
+      rule: "insufficient_improvements",
+      detail: `Got ${improvements.length} improvements, need ≥ ${VALIDATION.MIN_IMPROVEMENTS}`,
+    });
+  } else {
+    const highCount = improvements.filter(
+      (item) => (item as any)?.priority === "high"
+    ).length;
+    if (highCount < VALIDATION.MIN_HIGH_IMPROVEMENTS) {
+      failures.push({
+        rule: "insufficient_high_priority_improvements",
+        detail: `Got ${highCount} high-priority improvements, need ≥ ${VALIDATION.MIN_HIGH_IMPROVEMENTS}`,
+      });
+    }
+  }
+
+  // ── Rule 4: keyword gap — keywords.problem must name real keywords ──────────
+  const keywordProblem = asString(keywordsBlock.problem);
+  const namedGaps      = countNamedKeywords(keywordProblem);
+  if (namedGaps < VALIDATION.MIN_KEYWORD_GAPS_NAMED) {
+    failures.push({
+      rule: "missing_keywords_not_named",
+      detail: `ats_breakdown.keywords.problem has ${namedGaps} named keywords, need ≥ ${VALIDATION.MIN_KEYWORD_GAPS_NAMED}. Got: "${keywordProblem.slice(0, 80)}"`,
+    });
+  }
+
+  // ── Rule 5: summary_paragraphs — must have meaningful content ──────────────
+  if (summaryText.length < VALIDATION.MIN_SUMMARY_CHARS) {
+    failures.push({
+      rule: "summary_too_short",
+      detail: `summary_paragraphs has ${summaryText.length} chars, need ≥ ${VALIDATION.MIN_SUMMARY_CHARS}`,
+    });
+  }
+
+  // ── Rule 6: generic/template phrases in strengths or risks ─────────────────
+  for (const item of [...strengths, ...risks]) {
+    const text = asString(item);
+    const match = containsGenericPhrase(text);
+    if (match) {
+      failures.push({
+        rule: "generic_content",
+        detail: `Banned generic phrase "${match}" found in strengths/risks: "${text.slice(0, 80)}"`,
+      });
+      break; // one failure per call is enough to trigger retry
+    }
+  }
+
+  // ── Rule 7: interview questions — ≥ 5 ──────────────────────────────────────
+  if (questions.length < VALIDATION.MIN_INTERVIEW_QUESTIONS) {
+    failures.push({
+      rule: "insufficient_interview_questions",
+      detail: `Got ${questions.length} interview questions, need ≥ ${VALIDATION.MIN_INTERVIEW_QUESTIONS}`,
+    });
+  }
+
+  // ── Rule 8: salary table — at least 1 row with real SAR numbers ────────────
+  const hasValidSalaryRow = salaryTable.some((row) => {
+    const low  = Number((row as any)?.monthly_range_low);
+    const high = Number((row as any)?.monthly_range_high);
+    return Number.isFinite(low) && Number.isFinite(high) && low > 0 && high > low;
+  });
+  if (salaryTable.length < VALIDATION.MIN_SALARY_ROWS || !hasValidSalaryRow) {
+    failures.push({
+      rule: "invalid_salary_table",
+      detail: `salary_table has ${salaryTable.length} rows; valid SAR row found: ${hasValidSalaryRow}`,
+    });
+  }
+
+  // ── Rule 9: resume rewrite — must be a real document, not a placeholder ────
+  if (wordCount(rewriteText) < VALIDATION.MIN_REWRITE_WORDS) {
+    failures.push({
+      rule: "resume_rewrite_too_short",
+      detail: `resume_rewrite.full_resume has ${wordCount(rewriteText)} words, need ≥ ${VALIDATION.MIN_REWRITE_WORDS}`,
+    });
+  }
+
+  // ── Rule 10: score repair (non-retryable — just fix in place) ──────────────
+  // If AI returned any score fields despite being told not to, and they are
+  // out of range, we mark for repair rather than a retry.
+  const repairNeeded: Record<string, unknown> = {};
+  let needsRepair = false;
+
+  for (const key of ["ats_score"] as const) {
+    if (key in r && !isScoreValid(r[key])) {
+      repairNeeded[key] = 0; // will be overridden by deterministicScores anyway
+      needsRepair = true;
+      // This is a repair, not a retry — don't add to failures
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DECISION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // If output has no structural failures, it passes (even if repair was needed)
+  if (failures.length === 0) {
+    if (needsRepair) {
+      return {
+        action: "repair",
+        failures: [],
+        repaired: { ...r, ...repairNeeded },
+        summary: `REPAIR: Score fields out of range — repaired in place`,
+      };
+    }
+    return {
+      action: "pass",
+      failures: [],
+      summary: "PASS: All validation rules satisfied",
+    };
+  }
+
+  // Failures exist — decide retry vs fail based on attempt count
+  const failureNames = failures.map((f) => f.rule).join(", ");
+
+  if (attempt >= VALIDATION.MAX_ATTEMPTS) {
+    return {
+      action: "fail",
+      failures,
+      summary: `FAIL after ${attempt} attempts. Unresolved rules: ${failureNames}`,
+    };
+  }
+
+  return {
+    action: "retry",
+    failures,
+    summary: `RETRY (attempt ${attempt}/${VALIDATION.MAX_ATTEMPTS}). Failed rules: ${failureNames}`,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RETRY PROMPT INJECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Build a correction prefix injected at the TOP of the user prompt on retries.
+ * Explicitly tells the model what it got wrong in the previous attempt,
+ * without leaking the bad output back to it.
+ */
+export function buildRetryPrefix(failures: ValidationFailure[], attempt: number): string {
+  const lines: string[] = [
+    `⚠ CORRECTION REQUIRED (attempt ${attempt} of ${VALIDATION.MAX_ATTEMPTS})`,
+    `Your previous response failed ${failures.length} quality rule(s). Fix ALL of the following:`,
+    "",
+  ];
+
+  const RULE_INSTRUCTIONS: Record<string, string> = {
+    insufficient_strengths:
+      `• top_strengths: provide EXACTLY 3 items. Each must cite specific resume evidence in the format: "[Strength]: [Evidence] → [GCC relevance]"`,
+    insufficient_risks:
+      `• main_risks: provide EXACTLY 3 items. Each must name a specific, honest hiring risk: "[Risk]: [Evidence] → [Recruiter impact]"`,
+    insufficient_improvements:
+      `• quick_improvements: provide EXACTLY 12 items total (≥5 high, ≥4 medium, ≥3 low). Each must name a specific section and exact change.`,
+    insufficient_high_priority_improvements:
+      `• quick_improvements: at least ${VALIDATION.MIN_HIGH_IMPROVEMENTS} items must have priority "high". Review your list.`,
+    missing_keywords_not_named:
+      `• ats_breakdown_narratives.keywords.problem: LIST at least ${VALIDATION.MIN_KEYWORD_GAPS_NAMED} specific missing keywords by name (e.g. "Power BI, Nitaqat, PMP"). Do not write generic sentences.`,
+    summary_too_short:
+      `• executive_summary.summary_paragraphs: write at least 3 full paragraphs (≥80 chars total). Cover: overall impression, value proposition, and critical gaps.`,
+    generic_content:
+      `• Remove ALL generic phrases from strengths and risks. Banned: "strong communication skills", "team player", "results-driven", "passionate about", etc. Every item must reference specific resume content.`,
+    insufficient_interview_questions:
+      `• interview_questions: provide at least ${VALIDATION.MIN_INTERVIEW_QUESTIONS} questions. Each must have a detailed suggested_answer_direction.`,
+    invalid_salary_table:
+      `• salary_estimation.salary_table: provide at least 1 row with valid SAR monthly figures (monthly_range_low > 0 and monthly_range_high > monthly_range_low).`,
+    resume_rewrite_too_short:
+      `• resume_rewrite.full_resume: write a complete resume document (at least ${VALIDATION.MIN_REWRITE_WORDS} words). It must include: Header, Summary, Skills, Experience (with bullets), Education.`,
+  };
+
+  for (const failure of failures) {
+    const instruction = RULE_INSTRUCTIONS[failure.rule];
+    if (instruction) {
+      lines.push(instruction);
+    } else {
+      lines.push(`• [${failure.rule}]: ${failure.detail}`);
+    }
+  }
+
+  lines.push("", "Produce a complete, corrected response now. Do not acknowledge this message — just output the fixed tool call.");
+  return lines.join("\n");
+}
