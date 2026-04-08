@@ -34,6 +34,9 @@ import {
   Brain,
   Trophy,
   TrendingDown,
+  Key,
+  Star,
+  Shield,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1280,6 +1283,18 @@ const Analysis = () => {
   );
   const hasInterviewQuestions = hasArray(result?.interview_questions?.filter((q) => hasText(q.question)) || []);
 
+  /* ── Grouped improvements by priority (must be before any conditional return) ── */
+  const groupedImprovements = useMemo(() => {
+    const empty: { priority: string; description: string; action_step: string }[] = [];
+    if (!result) return { high: empty, medium: empty, low: empty };
+    const items = result.quick_improvements.filter((i) => hasText(i.description));
+    return {
+      high: items.filter((i) => String(i.priority || "").toLowerCase() === "high"),
+      medium: items.filter((i) => String(i.priority || "").toLowerCase() === "medium"),
+      low: items.filter((i) => String(i.priority || "").toLowerCase() === "low"),
+    };
+  }, [result]);
+
   const handleCancelAnalysis = () => {
     setAnalyzing(false);
     setStage("uploading");
@@ -1527,9 +1542,9 @@ const Analysis = () => {
       {analysisDialog}
       <style>{`@media print { header,button,.no-print { display:none!important } body { background:white!important } }`}</style>
 
-      {/* ══ HEADER ══ */}
+      {/* ══════════════════ HEADER ══════════════════ */}
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur-md">
-        <div className="container max-w-7xl flex items-center gap-3 h-14 px-4">
+        <div className="container max-w-6xl flex items-center gap-3 h-14 px-4">
           <Button variant="ghost" size="icon" asChild className="h-8 w-8 rounded-lg flex-shrink-0">
             <Link to="/dashboard"><ArrowLeft className={`w-4 h-4 ${ar ? "rotate-180" : ""}`} /></Link>
           </Button>
@@ -1537,22 +1552,29 @@ const Analysis = () => {
             <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center flex-shrink-0">
               <BarChart3 className="w-3.5 h-3.5 text-violet-500" />
             </div>
-            <span className="font-bold text-sm text-foreground hidden sm:block truncate">{ar ? "تقرير تحليل السيرة الذاتية" : "Resume Analysis Report"}</span>
-            {/* Live score badge */}
-            <span className={`hidden sm:inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : "bg-red-500/10 text-red-600 border-red-500/20"}`}>
+            <span className="font-bold text-sm text-foreground hidden sm:block truncate">
+              {ar ? "تقرير تحليل السيرة الذاتية" : "Resume Analysis Report"}
+            </span>
+            <span className={`hidden sm:inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border
+              ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/25"
+                : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-600 border-amber-500/25"
+                : "bg-red-500/10 text-red-600 border-red-500/25"}`}>
               ATS {result.ats_score}/100
             </span>
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <Button variant="outline" size="sm" onClick={handleRetrySelectedResume} disabled={analyzing} className="gap-1.5 rounded-lg text-xs h-8 border-violet-500/30 hover:border-violet-500 hover:bg-violet-500/5 hidden sm:flex">
+            <Button variant="outline" size="sm" onClick={handleRetrySelectedResume} disabled={analyzing}
+              className="gap-1.5 rounded-lg text-xs h-8 hidden sm:flex">
               {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" /> : <BarChart3 className="w-3.5 h-3.5 text-violet-500" />}
               {ar ? "إعادة التحليل" : "Re-analyze"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 rounded-lg text-xs h-8 hidden sm:flex">
-              <Download className="w-3.5 h-3.5" />{ar ? "تنزيل" : "Print"}
+            <Button variant="outline" size="sm" onClick={() => window.print()}
+              className="gap-1.5 rounded-lg text-xs h-8 hidden sm:flex">
+              <Download className="w-3.5 h-3.5" />{ar ? "طباعة" : "Print"}
             </Button>
-            <Button size="sm" asChild className="gap-1.5 rounded-lg text-xs h-8 bg-violet-600 hover:bg-violet-700 text-white">
+            <Button size="sm" asChild
+              className="gap-1.5 rounded-lg text-xs h-8 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-sm">
               <Link to={buildEnhanceUrl(priorityFixes[0]?.focus || "professionalSummary")}>
                 <Sparkles className="w-3.5 h-3.5" />{ar ? "تحسين السيرة" : "Improve CV"}
               </Link>
@@ -1561,47 +1583,83 @@ const Analysis = () => {
         </div>
       </header>
 
-      <main className="container max-w-7xl py-6 px-4">
-        {/* ══ HERO: SCORE + SUMMARY CARD ══ */}
-        <div className="relative rounded-2xl border border-border/80 bg-gradient-to-br from-violet-600/10 via-background to-indigo-600/6 p-6 mb-6 shadow-lg shadow-violet-500/5">
-          {/* BG blobs */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/6 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-40 h-40 bg-indigo-500/6 rounded-full blur-2xl pointer-events-none" />
+      {/* ══════════════════ HERO SECTION ══════════════════ */}
+      <div className="border-b border-border/40 bg-gradient-to-b from-violet-500/6 via-background/80 to-background">
+        <div className="container max-w-6xl px-4 py-8">
+          <div className="flex flex-col lg:flex-row items-center lg:items-start gap-7">
 
-          <div className="relative flex flex-col lg:flex-row gap-6">
-            {/* Left: Ring + name */}
-            <div className="flex items-center gap-5">
+            {/* Score Ring */}
+            <div className="flex-shrink-0">
               <ScoreRing score={result.ats_score} />
-              <div className="space-y-2">
-                {result.candidate_name && <p className="text-base font-bold text-foreground">👤 {result.candidate_name}</p>}
-                {result.target_role && (
-                  <div className="flex items-center gap-2">
-                    <Target className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
-                    <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">{result.target_role}</span>
-                  </div>
-                )}
-                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${overallStatus?.tone === "success" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : overallStatus?.tone === "amber" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"}`}>
-                  {overallStatus?.tone === "success" ? <Trophy className="w-3.5 h-3.5" /> : overallStatus?.tone === "amber" ? <AlertTriangle className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                  {overallStatus?.title}
-                </div>
-                <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">{overallStatus?.description}</p>
-              </div>
             </div>
 
-            {/* Right: Section mini-scores grid */}
-            <div className="flex-1 flex flex-col justify-center gap-3">
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {/* Candidate Info + Section Mini-Scores */}
+            <div className="flex-1 min-w-0 space-y-4 text-center lg:text-start">
+              {/* Name + Role */}
+              <div>
+                {result.candidate_name && (
+                  <h1 className="text-xl font-extrabold text-foreground mb-0.5 truncate">
+                    {result.candidate_name}
+                  </h1>
+                )}
+                {result.target_role && (
+                  <div className="flex items-center gap-1.5 justify-center lg:justify-start">
+                    <Target className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+                    <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">
+                      {result.target_role}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Overall status badge */}
+              <div className="flex items-center gap-2 justify-center lg:justify-start flex-wrap">
+                <div className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border
+                  ${overallStatus?.tone === "success"
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25"
+                    : overallStatus?.tone === "amber"
+                    ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/25"
+                    : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/25"}`}>
+                  {overallStatus?.tone === "success"
+                    ? <Trophy className="w-3.5 h-3.5" />
+                    : overallStatus?.tone === "amber"
+                    ? <AlertTriangle className="w-3.5 h-3.5" />
+                    : <TrendingDown className="w-3.5 h-3.5" />}
+                  {overallStatus?.title}
+                </div>
+                {result.executive_summary.candidate_level && (
+                  <span className="text-xs px-3 py-1.5 rounded-xl bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/20 font-medium">
+                    {result.executive_summary.candidate_level}
+                  </span>
+                )}
+              </div>
+
+              {/* Section mini-scores grid */}
+              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
                 {Object.entries(result.section_scores)
                   .filter(([key]) => sectionScoreLabels[key])
                   .slice(0, 7)
                   .map(([key, score]) => {
                     const n = normalizeScore(score);
+                    const col = n >= 80 ? "#10b981" : n >= 60 ? "#f59e0b" : "#ef4444";
+                    const textCol = n >= 80
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : n >= 60
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-600 dark:text-red-400";
                     return (
-                      <Link key={key} to={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")}
-                        className="group flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/60 bg-background/70 hover:border-violet-400/50 hover:bg-violet-500/5 transition-all cursor-pointer">
-                        <span className={`text-xl font-black tabular-nums leading-none ${scoreColor(n)}`}>{n}</span>
+                      <Link
+                        key={key}
+                        to={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")}
+                        className="group flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/60
+                          bg-card hover:border-violet-400/50 hover:bg-violet-500/5 transition-all"
+                      >
+                        <span className={`text-lg font-black tabular-nums leading-none ${textCol}`}>{n}</span>
                         <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${n}%`, background: scoreRingColor(n) }} />
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${n}%`, background: col }}
+                          />
                         </div>
                         <span className="text-[9px] text-muted-foreground text-center leading-tight group-hover:text-foreground transition-colors">
                           {sectionScoreLabels[key]?.split(" ").slice(0, 2).join(" ") || key}
@@ -1610,48 +1668,60 @@ const Analysis = () => {
                     );
                   })}
               </div>
-              {/* Status badges row */}
-              <div className="flex flex-wrap gap-2">
-                {result.executive_summary.candidate_level && (
-                  <span className="text-xs px-3 py-1 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-300 font-medium border border-violet-500/20">
-                    {result.executive_summary.candidate_level}
-                  </span>
-                )}
-                <span className={`text-xs px-3 py-1 rounded-full font-bold border flex items-center gap-1.5 ${result.ats_score >= 80 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : result.ats_score >= 60 ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : "bg-red-500/10 text-red-600 border-red-500/20"}`}>
-                  <Zap className="w-3 h-3" />
-                  {result.ats_score >= 85 ? (ar ? "جاهز للتقديم" : "Apply-Ready") : result.ats_score >= 70 ? (ar ? "قريب من الجاهزية" : "Nearly Ready") : result.ats_score >= 55 ? (ar ? "يحتاج تحسين" : "Needs Work") : (ar ? "يحتاج مراجعة كبيرة" : "Major Revision")}
-                </span>
-              </div>
             </div>
 
-            {/* CTA */}
-            <div className="flex flex-col gap-2 justify-center flex-shrink-0">
-              <Button size="lg" asChild className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg shadow-violet-500/20 gap-2">
+            {/* CTA column */}
+            <div className="flex flex-row lg:flex-col gap-2 flex-shrink-0">
+              <Button
+                size="lg"
+                asChild
+                className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700
+                  hover:to-indigo-700 text-white shadow-lg shadow-violet-500/25 gap-2 flex-1 lg:flex-none"
+              >
                 <Link to={buildEnhanceUrl(priorityFixes[0]?.focus || "professionalSummary")}>
-                  <Sparkles className="w-4 h-4" />{ar ? "تحسين السيرة الآن" : "Improve Now"}
+                  <Sparkles className="w-4 h-4" />
+                  {ar ? "تحسين السيرة" : "Improve CV"}
                 </Link>
               </Button>
-              <Button size="sm" variant="outline" asChild className="rounded-xl gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                asChild
+                className="rounded-xl gap-2 flex-1 lg:flex-none"
+              >
                 <Link to="/dashboard/interview-avatar">
-                  <MessageSquare className="w-4 h-4" />{ar ? "مقابلة AI" : "AI Interview"}
+                  <MessageSquare className="w-4 h-4" />
+                  {ar ? "مقابلة AI" : "AI Interview"}
                 </Link>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setActiveTab("enhanced" as any)}
+                className="rounded-xl gap-2 flex-1 lg:flex-none text-violet-600 dark:text-violet-400
+                  hover:bg-violet-500/8"
+              >
+                <Wand2 className="w-4 h-4" />
+                {ar ? "السيرة المحسنة" : "Enhanced CV"}
               </Button>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* ══ REPORT TABS NAV ══ */}
-        <div className="sticky top-14 z-20 bg-background/95 backdrop-blur-md pb-3 -mx-4 px-4">
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide border-b border-border/60">
+      {/* ══════════════════ TAB NAV ══════════════════ */}
+      <div className="sticky top-14 z-20 bg-background/95 backdrop-blur-md border-b border-border/60">
+        <div className="container max-w-6xl px-4">
+          <div className="flex gap-0.5 overflow-x-auto scrollbar-hide">
             {reportTabs.map(({ id, labelAr, labelEn, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id as any)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
-                  activeTab === id
-                    ? "border-violet-500 text-violet-600 dark:text-violet-400 bg-violet-500/5"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-                }`}
+                className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold whitespace-nowrap border-b-2 transition-all flex-shrink-0
+                  ${activeTab === id
+                    ? "border-violet-500 text-violet-600 dark:text-violet-400"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
+                  }`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 {ar ? labelAr : labelEn}
@@ -1659,264 +1729,291 @@ const Analysis = () => {
             ))}
           </div>
         </div>
+      </div>
 
-        {/* ══ TAB PANELS ══ */}
-        <div className="mt-5 space-y-5">
+      {/* ══════════════════ TAB PANELS ══════════════════ */}
+      <main className="container max-w-6xl py-6 px-4 space-y-5">
+        {/* ══════════ OVERVIEW TAB ══════════ */}
+        {activeTab === "overview" && (
+          <div className="space-y-5">
 
-          {/* ── OVERVIEW TAB ── */}
-          {activeTab === "overview" && (
-            <div className="space-y-5">
-              {/* Executive Summary */}
-              {result.executive_summary && (
-                <div className="rounded-2xl border border-border bg-card">
-                  <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
-                    <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-                      <Brain className="w-4.5 h-4.5 text-violet-500" style={{width:"18px",height:"18px"}} />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-bold text-foreground">{ar ? "الملخص التنفيذي" : "Executive Summary"}</h2>
-                      <p className="text-xs text-muted-foreground">{ar ? "تقييم شامل لجاهزية السيرة" : "Comprehensive resume readiness assessment"}</p>
-                    </div>
+            {/* Executive Summary */}
+            {result.executive_summary && (
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
+                  <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
+                    <Brain className="w-4 h-4 text-violet-500" />
                   </div>
-                  <div className="p-5 space-y-4">
-                    {hasText(result.executive_summary.summary_paragraphs) &&
-                      !result.executive_summary.summary_paragraphs.startsWith("This score was generated") &&
-                      !result.executive_summary.summary_paragraphs.startsWith("تم إنشاء هذا التقييم") &&
-                      !looksLikeRawCvText(result.executive_summary.summary_paragraphs) && (
-                        <p
-                          className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words bg-muted/30 rounded-xl p-4 w-full max-w-none"
-                        >{result.executive_summary.summary_paragraphs}</p>
-                      )}
-                    <div className="grid md:grid-cols-3 gap-3">
-                      {hasArray(result.executive_summary.best_fit_roles) && (
-                        <div className="p-4 rounded-xl border border-border bg-background/60 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Briefcase className="w-4 h-4 text-violet-500" />
-                            <h4 className="text-xs font-bold text-foreground uppercase tracking-wide">{t.analysis.bestFitRoles}</h4>
-                          </div>
-                          <ul className="space-y-1.5">
-                            {result.executive_summary.best_fit_roles.filter(r => !isJunk(r)).map((r, i) => (
-                              <li key={i} className="text-xs text-foreground flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-violet-500/15 text-violet-600 text-[9px] flex items-center justify-center font-bold flex-shrink-0">{i+1}</span>{r}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {hasArray(result.executive_summary.top_strengths) && (
-                        <div className="p-4 rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-emerald-500/3 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <TrendingUp className="w-4 h-4 text-emerald-500" />
-                            <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">{t.analysis.strengths}</h4>
-                          </div>
-                          <ul className="space-y-2">
-                            {result.executive_summary.top_strengths.filter(s => !isJunk(s)).map((s, i) => (
-                              <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-emerald-500/8 rounded-lg p-2">
-                                <span className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-[9px] font-bold text-emerald-600 flex items-center justify-center flex-shrink-0 mt-0.5">{i+1}</span>{s}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {hasArray(result.executive_summary.main_risks) && (
-                        <div className="p-4 rounded-xl border border-red-500/25 bg-gradient-to-br from-red-500/8 to-red-500/3 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 text-red-500" />
-                            <h4 className="text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">{t.analysis.risks}</h4>
-                          </div>
-                          <ul className="space-y-2">
-                            {result.executive_summary.main_risks.filter(r => !isJunk(r)).map((r, i) => (
-                              <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-red-500/8 rounded-lg p-2">
-                                <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />{r}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground">{ar ? "الملخص التنفيذي" : "Executive Summary"}</h2>
+                    <p className="text-xs text-muted-foreground">{ar ? "تقييم شامل لجاهزية السيرة في سوق الخليج" : "Full GCC-market readiness assessment"}</p>
                   </div>
                 </div>
-              )}
-
-              {/* Missing Keywords Card */}
-              {(() => {
-                const mapped = mapAnalysisResponse(result);
-                const kws = mapped.missing_keywords.filter(k => k.length >= 2 && k.length <= 40);
-                if (!kws.length) return null;
-                return (
-                  <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-amber-500/3">
-                    <div className="flex items-center gap-3 p-5 border-b border-orange-500/15">
-                      <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
-                        <Key className="w-4 h-4 text-orange-500" />
-                      </div>
-                      <div>
-                        <h2 className="text-sm font-bold text-foreground">
-                          {ar ? "كلمات مفتاحية ناقصة" : "Missing Keywords"}
-                          <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/20">{kws.length}</span>
-                        </h2>
-                        <p className="text-xs text-muted-foreground">{ar ? "كلمات يبحث عنها ATS ولم تظهر في سيرتك" : "ATS keywords absent from your resume"}</p>
-                      </div>
-                    </div>
-                    <div className="p-5">
-                      <div className="flex flex-wrap gap-2">
-                        {kws.map((kw, i) => (
-                          <span key={i} className="text-xs px-3 py-1.5 rounded-full border border-orange-500/25 bg-orange-500/8 text-orange-700 dark:text-orange-300 font-medium" dir="ltr">
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground mt-3">
-                        {ar ? "أضف هذه الكلمات في قسم المهارات أو الملخص المهني لتحسين نتيجة ATS." : "Add these to your Skills section or Professional Summary to improve ATS score."}
+                <div className="p-5 space-y-4">
+                  {hasText(result.executive_summary.summary_paragraphs) &&
+                    !result.executive_summary.summary_paragraphs.startsWith("This score was generated") &&
+                    !result.executive_summary.summary_paragraphs.startsWith("تم إنشاء هذا التقييم") &&
+                    !looksLikeRawCvText(result.executive_summary.summary_paragraphs) && (
+                      <p className="text-sm text-foreground/90 leading-7 whitespace-pre-wrap break-words bg-muted/30 rounded-xl p-4">
+                        {result.executive_summary.summary_paragraphs}
                       </p>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Priority Fixes */}
-              {hasArray(priorityFixes) && (
-                <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3">
-                  <div className="flex items-center justify-between p-5 border-b border-amber-500/15">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
-                        <Zap className="w-4 h-4 text-amber-500" />
+                    )}
+                  <div className="grid md:grid-cols-3 gap-3">
+                    {hasArray(result.executive_summary.best_fit_roles) && (
+                      <div className="p-4 rounded-xl border border-border bg-background/60 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-4 h-4 text-violet-500" />
+                          <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">{t.analysis.bestFitRoles}</h4>
+                        </div>
+                        <ul className="space-y-2">
+                          {result.executive_summary.best_fit_roles.filter((r) => !isJunk(r)).map((r, i) => (
+                            <li key={i} className="text-xs text-foreground flex items-start gap-2">
+                              <span className="w-4 h-4 rounded-full bg-violet-500/15 text-violet-600 text-[9px] flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                              {r}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-                      <div>
-                        <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                          {ar ? "أولويات التحسين الفوري" : "Immediate Priority Fixes"}
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">{priorityFixes.length}</span>
-                        </h2>
-                        <p className="text-xs text-muted-foreground">{ar ? "ابدأ بهذه النقاط لأكبر تأثير على نتيجة ATS" : "Start here for maximum ATS score impact"}</p>
+                    )}
+                    {hasArray(result.executive_summary.top_strengths) && (
+                      <div className="p-4 rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-emerald-500/3 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-emerald-500" />
+                          <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">{t.analysis.strengths}</h4>
+                        </div>
+                        <ul className="space-y-2">
+                          {result.executive_summary.top_strengths.filter((s) => !isJunk(s)).map((s, i) => (
+                            <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-emerald-500/8 rounded-lg p-2">
+                              <Star className="w-3 h-3 text-emerald-500 flex-shrink-0 mt-0.5" />{s}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => setActiveTab("improvements" as any)} className="text-xs rounded-lg gap-1">
-                      {ar ? "عرض الكل" : "View all"}<ChevronRight className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  <div className="p-5 grid md:grid-cols-3 gap-3">
-                    {priorityFixes.map((item) => (
-                      <Link key={item.id} to={buildEnhanceUrl(item.focus)} className="group flex flex-col gap-2 p-3.5 rounded-xl border-2 border-border hover:border-violet-400 bg-background/70 hover:bg-violet-500/5 transition-all">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold w-fit ${item.priority === "high" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}`}>
-                          {item.priority === "high" ? (ar ? "عالية" : "High") : ar ? "متوسطة" : "Medium"}
-                        </span>
-                        <p className="text-xs font-semibold text-foreground leading-relaxed">{item.title}</p>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed flex-1">{item.action}</p>
-                        <span className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
-                          {ar ? "إصلاح في المحرر" : "Fix in Editor"}<ChevronRight className="w-3 h-3" />
-                        </span>
-                      </Link>
-                    ))}
+                    )}
+                    {hasArray(result.executive_summary.main_risks) && (
+                      <div className="p-4 rounded-xl border border-red-500/25 bg-gradient-to-br from-red-500/8 to-red-500/3 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-red-500" />
+                          <h4 className="text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wider">{t.analysis.risks}</h4>
+                        </div>
+                        <ul className="space-y-2">
+                          {result.executive_summary.main_risks.filter((r) => !isJunk(r)).map((r, i) => (
+                            <li key={i} className="text-xs text-foreground flex items-start gap-2 bg-red-500/8 rounded-lg p-2">
+                              <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />{r}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Before / After preview */}
-              {hasText(transformationPreview.before) && hasText(transformationPreview.after) && transformationPreview.before !== transformationPreview.after && (
-                <div className="rounded-2xl border border-border bg-card">
-                  <div className="flex items-center gap-3 p-5 border-b border-border/60">
-                    <Wand2 className="w-4 h-4 text-violet-500" />
-                    <h2 className="text-sm font-bold text-foreground">{ar ? "مثال: قبل وبعد التحسين" : "Before & After Preview"}</h2>
-                  </div>
-                  <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
-                    <div className="p-5 space-y-2">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-muted-foreground/50" />{ar ? "قبل" : "Before"}</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed break-words bg-muted/30 rounded-lg p-3" dir="ltr" style={{textAlign:"left"}}>{transformationPreview.before}</p>
-                    </div>
-                    <div className="p-5 space-y-2">
-                      <h4 className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" />{ar ? "بعد" : "After"}</h4>
-                      <p className="text-sm text-foreground leading-relaxed break-words bg-violet-500/5 rounded-lg p-3" dir="ltr" style={{textAlign:"left"}}>{transformationPreview.after}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── ATS DETAILS TAB ── */}
-          {activeTab === "ats" && (
-            <div className="space-y-5">
-              {/* Section scores full */}
-              {hasObject(result.section_scores) && (
-                <div className="rounded-2xl border border-border bg-card">
-                  <div className="flex items-center justify-between p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-                        <BarChart3 className="w-4 h-4 text-violet-500" />
-                      </div>
-                      <div>
-                        <h2 className="text-sm font-bold text-foreground">{ar ? "تقييم أقسام السيرة" : "Section Performance"}</h2>
-                        <p className="text-xs text-muted-foreground">{ar ? "اضغط على أي قسم للانتقال للمحرر" : "Tap any section to jump to editor"}</p>
-                      </div>
-                    </div>
-                    <div className="hidden md:flex gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" />{ar ? "ممتاز ≥80" : "Strong ≥80"}</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />{ar ? "جيد ≥60" : "Good ≥60"}</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />{ar ? "ضعيف <60" : "Weak <60"}</span>
-                    </div>
-                  </div>
-                  <div className="p-5 space-y-2.5">
-                    {Object.entries(result.section_scores)
-                      .filter(([key, score]) => { const n = normalizeScore(score); return n >= 0 && sectionScoreLabels[key]; })
-                      .sort((a, b) => normalizeScore(a[1]) - normalizeScore(b[1]))
-                      .map(([key, score]) => (
-                        <ScoreBar key={key} label={sectionScoreLabels[key] || key} score={normalizeScore(score)}
-                          subtitle={lowScoreSections.some(s => s.key === key) ? (ar ? "من أقل الأقسام — يفضل البدء به" : "One of your lowest — start here") : undefined}
-                          actionLabel={ar ? "تحسين" : "Improve"} actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")} />
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ATS Breakdown */}
-              {hasObject(result.ats_breakdown || null) && (
-                <div className="rounded-2xl border border-border bg-card">
-                  <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-indigo-500/5 to-transparent">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                      <ListChecks className="w-4 h-4 text-indigo-500" />
+            {/* Missing Keywords */}
+            {(() => {
+              const mapped = mapAnalysisResponse(result);
+              const kws = mapped.missing_keywords.filter((k) => k.length >= 2 && k.length <= 40);
+              if (!kws.length) return null;
+              return (
+                <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-amber-500/3 overflow-hidden">
+                  <div className="flex items-center gap-3 p-5 border-b border-orange-500/15">
+                    <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center flex-shrink-0">
+                      <Key className="w-4 h-4 text-orange-500" />
                     </div>
                     <div>
-                      <h2 className="text-sm font-bold text-foreground">{t.analysis.atsBreakdown}</h2>
-                      <p className="text-xs text-muted-foreground">{ar ? "تفصيل كل جانب من جوانب سيرتك" : "Detailed breakdown of each resume aspect"}</p>
+                      <h2 className="text-sm font-bold text-foreground">
+                        {ar ? "كلمات مفتاحية ناقصة" : "Missing ATS Keywords"}
+                        <span className="ms-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/20">{kws.length}</span>
+                      </h2>
+                      <p className="text-xs text-muted-foreground">{ar ? "كلمات يبحث عنها ATS ولم تظهر في سيرتك" : "Keywords absent from your resume that ATS systems look for"}</p>
                     </div>
                   </div>
-                  <div className="p-5 space-y-3">
-                    {Object.entries(result.ats_breakdown)
-                      .filter(([, data]) => normalizeScore(data.score) >= 0)
-                      .map(([key, data]) => (
-                        <BreakdownCard key={key}
-                          title={breakdownLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
-                          score={normalizeScore(data.score)}
-                          currentState={safeText(data.current_state)} problem={safeText(data.problem)} improvement={safeText(data.recommended_improvement)}
-                          actionLabel={ar ? "تحسين" : "Improve"} actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")} />
+                  <div className="p-5">
+                    <div className="flex flex-wrap gap-2">
+                      {kws.map((kw, i) => (
+                        <span key={i} className="text-xs px-3 py-1.5 rounded-full border border-orange-500/25 bg-orange-500/8 text-orange-700 dark:text-orange-300 font-medium" dir="ltr">
+                          {kw}
+                        </span>
                       ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
+                      {ar
+                        ? "أضف هذه الكلمات بشكل طبيعي في قسم المهارات أو الملخص المهني لتحسين نتيجة ATS."
+                        : "Add these naturally to your Skills section or Professional Summary to significantly improve ATS visibility."}
+                    </p>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+              );
+            })()}
 
-          {/* ── CAREER TAB ── */}
-          {activeTab === "career" && hasCareer && (
-            <div className="rounded-2xl border border-border bg-card">
+            {/* Priority Fixes */}
+            {hasArray(priorityFixes) && (
+              <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/3 overflow-hidden">
+                <div className="flex items-center justify-between p-5 border-b border-amber-500/15">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+                      <Zap className="w-4 h-4 text-amber-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                        {ar ? "أولويات التحسين الفوري" : "Immediate Priority Fixes"}
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">{priorityFixes.length}</span>
+                      </h2>
+                      <p className="text-xs text-muted-foreground">{ar ? "ابدأ بهذه النقاط لأكبر تأثير على نتيجة ATS" : "Start here for maximum ATS score impact"}</p>
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => setActiveTab("improvements" as any)} className="text-xs rounded-xl gap-1 text-muted-foreground">
+                    {ar ? "عرض الكل" : "View all"}<ChevronRight className="w-3 h-3" />
+                  </Button>
+                </div>
+                <div className="p-5 grid md:grid-cols-3 gap-3">
+                  {priorityFixes.map((item) => (
+                    <Link
+                      key={item.id}
+                      to={buildEnhanceUrl(item.focus)}
+                      className="group flex flex-col gap-2.5 p-4 rounded-xl border-2 border-border hover:border-violet-400 bg-background hover:bg-violet-500/5 transition-all"
+                    >
+                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold w-fit
+                        ${item.priority === "high" ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
+                        {item.priority === "high" ? (ar ? "عالية" : "High") : ar ? "متوسطة" : "Medium"}
+                      </span>
+                      <p className="text-xs font-semibold text-foreground leading-relaxed flex-1">{item.title}</p>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">{item.action}</p>
+                      <span className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
+                        {ar ? "إصلاح في المحرر" : "Fix in Editor"}<ChevronRight className="w-3 h-3" />
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Before / After */}
+            {hasText(transformationPreview.before) && hasText(transformationPreview.after) && transformationPreview.before !== transformationPreview.after && (
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-3 p-5 border-b border-border/60">
+                  <Wand2 className="w-4 h-4 text-violet-500" />
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "مثال: قبل وبعد التحسين" : "Before & After Preview"}</h2>
+                </div>
+                <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
+                  <div className="p-5 space-y-2">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />{ar ? "قبل" : "Before"}
+                    </p>
+                    <p className="text-sm text-muted-foreground leading-relaxed break-words bg-muted/30 rounded-lg p-3" dir="ltr" style={{ textAlign: "left" }}>{transformationPreview.before}</p>
+                  </div>
+                  <div className="p-5 space-y-2">
+                    <p className="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-violet-500" />{ar ? "بعد" : "After"}
+                    </p>
+                    <p className="text-sm text-foreground leading-relaxed break-words bg-violet-500/5 rounded-lg p-3 border border-violet-500/15" dir="ltr" style={{ textAlign: "left" }}>{transformationPreview.after}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════ ATS TAB ══════════ */}
+        {activeTab === "ats" && (
+          <div className="space-y-5">
+            {hasObject(result.section_scores) && (
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center justify-between p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
+                      <BarChart3 className="w-4 h-4 text-violet-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-foreground">{ar ? "أداء أقسام السيرة" : "Section Performance"}</h2>
+                      <p className="text-xs text-muted-foreground">{ar ? "اضغط على أي قسم للانتقال للمحرر الذكي" : "Tap any section to jump to the smart editor"}</p>
+                    </div>
+                  </div>
+                  <div className="hidden md:flex gap-3 text-[11px] text-muted-foreground">
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{ar ? "ممتاز ≥80" : "Strong ≥80"}</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" />{ar ? "جيد ≥60" : "Good ≥60"}</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500" />{ar ? "ضعيف <60" : "Weak <60"}</span>
+                  </div>
+                </div>
+                <div className="p-5 space-y-3">
+                  {Object.entries(result.section_scores)
+                    .filter(([key, score]) => { const n = normalizeScore(score); return n >= 0 && sectionScoreLabels[key]; })
+                    .sort((a, b) => normalizeScore(a[1]) - normalizeScore(b[1]))
+                    .map(([key, score]) => (
+                      <ScoreBar
+                        key={key}
+                        label={sectionScoreLabels[key] || key}
+                        score={normalizeScore(score)}
+                        subtitle={lowScoreSections.some((s) => s.key === key)
+                          ? (ar ? "من أقل الأقسام — ابدأ من هنا" : "One of your lowest — start here")
+                          : undefined}
+                        actionLabel={ar ? "تحسين" : "Improve"}
+                        actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")}
+                      />
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {hasObject(result.ats_breakdown || null) && (
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-indigo-500/5 to-transparent">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                    <ListChecks className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground">{t.analysis.atsBreakdown}</h2>
+                    <p className="text-xs text-muted-foreground">{ar ? "انقر على أي عنصر لعرض التفاصيل والتوصية" : "Click any item to expand details and fix recommendations"}</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-2.5">
+                  {Object.entries(result.ats_breakdown)
+                    .filter(([, data]) => normalizeScore(data.score) >= 0)
+                    .sort((a, b) => normalizeScore(a[1].score) - normalizeScore(b[1].score))
+                    .map(([key, data]) => (
+                      <BreakdownCard
+                        key={key}
+                        title={breakdownLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                        score={normalizeScore(data.score)}
+                        currentState={safeText(data.current_state)}
+                        problem={safeText(data.problem)}
+                        improvement={safeText(data.recommended_improvement)}
+                        actionLabel={ar ? "تحسين في المحرر" : "Improve in Editor"}
+                        actionTo={buildEnhanceUrl(sectionFocusMap[key] || "professionalSummary")}
+                      />
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════ CAREER TAB ══════════ */}
+        {activeTab === "career" && (
+          hasCareer ? (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
                   <Briefcase className="w-4 h-4 text-emerald-500" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-foreground">{t.analysis.career}</h2>
-                  <p className="text-xs text-muted-foreground">{ar ? "توصيات مهنية مبنية على تحليل سيرتك" : "Career recommendations based on your resume"}</p>
+                  <p className="text-xs text-muted-foreground">{ar ? "توصيات مهنية مخصصة بناءً على ملفك" : "Personalised career roadmap based on your profile"}</p>
                 </div>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="p-5 space-y-5">
                 {hasArray(result.career_recommendations.top_roles) && (
                   <div>
-                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.topRoles}</h3>
+                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">{t.analysis.topRoles}</h3>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {result.career_recommendations.top_roles.map((r, i) => (
                         <div key={i} className="p-4 bg-muted/30 rounded-xl border border-border hover:border-emerald-500/30 transition-colors">
                           <div className="flex items-center gap-2 mb-2">
-                            <span className="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-600 text-xs font-bold flex items-center justify-center">{i+1}</span>
+                            <span className="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-600 text-xs font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
                             <p className="text-xs font-bold text-foreground">{r.role}</p>
                           </div>
-                          <p className="text-xs text-muted-foreground">{r.why_it_fits}</p>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{r.why_it_fits}</p>
                         </div>
                       ))}
                     </div>
@@ -1925,9 +2022,9 @@ const Analysis = () => {
                 <div className="grid md:grid-cols-2 gap-4">
                   {hasArray(result.career_recommendations.skills_to_improve) && (
                     <div className="p-4 rounded-xl border border-border bg-background/60">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.skillsToImprove}</h4>
+                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">{t.analysis.skillsToImprove}</h4>
                       <div className="flex flex-wrap gap-1.5">
-                        {result.career_recommendations.skills_to_improve.filter(s => !isJunk(s)).map((s, i) => (
+                        {result.career_recommendations.skills_to_improve.filter((s) => !isJunk(s)).map((s, i) => (
                           <span key={i} className="text-xs px-2.5 py-1 rounded-full border border-border bg-muted/50 text-foreground font-medium">{s}</span>
                         ))}
                       </div>
@@ -1935,25 +2032,35 @@ const Analysis = () => {
                   )}
                   {hasArray(result.career_recommendations.certifications_recommended) && (
                     <div className="p-4 rounded-xl border border-border bg-background/60">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.certifications}</h4>
+                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">{t.analysis.certifications}</h4>
                       <ul className="space-y-1.5">
-                        {result.career_recommendations.certifications_recommended.filter(c => !isJunk(c)).map((c, i) => (
-                          <li key={i} className="text-xs text-foreground flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />{c}</li>
+                        {result.career_recommendations.certifications_recommended.filter((c) => !isJunk(c)).map((c, i) => (
+                          <li key={i} className="text-xs text-foreground flex items-center gap-2">
+                            <Shield className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />{c}
+                          </li>
                         ))}
                       </ul>
                     </div>
                   )}
                 </div>
-                {(hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.thirty_days) || hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.sixty_days) || hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.ninety_days)) && (
+                {(hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.thirty_days) ||
+                  hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.sixty_days) ||
+                  hasText(result.career_recommendations.thirty_sixty_ninety_day_plan?.ninety_days)) && (
                   <div>
-                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">{t.analysis.actionPlan}</h4>
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">{t.analysis.actionPlan}</h4>
                     <div className="grid md:grid-cols-3 gap-3">
-                      {(["thirty_days", "sixty_days", "ninety_days"] as const).map((period) => {
+                      {(["thirty_days", "sixty_days", "ninety_days"] as const).map((period, idx) => {
                         const val = result.career_recommendations.thirty_sixty_ninety_day_plan?.[period];
                         if (!hasText(val)) return null;
+                        const days = ["30", "60", "90"][idx];
+                        const colors = ["bg-violet-500/8 border-violet-500/15 text-violet-600 dark:text-violet-400",
+                          "bg-indigo-500/8 border-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+                          "bg-blue-500/8 border-blue-500/15 text-blue-600 dark:text-blue-400"][idx];
                         return (
-                          <div key={period} className="p-4 bg-violet-500/8 rounded-xl border border-violet-500/15">
-                            <p className="text-xs font-bold text-violet-600 dark:text-violet-400 mb-2">{period === "thirty_days" ? "30" : period === "sixty_days" ? "60" : "90"} {t.analysis.days}</p>
+                          <div key={period} className={`p-4 rounded-xl border ${colors.split(" ").slice(0, 2).join(" ")}`}>
+                            <p className={`text-xs font-black mb-2 ${colors.split(" ")[2]} ${colors.split(" ")[3]}`}>
+                              {days} {t.analysis.days}
+                            </p>
                             <p className="text-xs text-foreground leading-relaxed">{val}</p>
                           </div>
                         );
@@ -1963,50 +2070,86 @@ const Analysis = () => {
                 )}
                 {hasText(result.career_recommendations.linkedin_improvements) && (
                   <div className="p-4 rounded-xl border border-border bg-background/60">
-                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">LinkedIn / Portfolio</h4>
-                    <p className="text-sm text-foreground whitespace-pre-wrap break-words leading-6 w-full max-w-none" dir="ltr" style={{textAlign:"left"}}>{result.career_recommendations.linkedin_improvements}</p>
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">LinkedIn</h4>
+                    <p className="text-sm text-foreground whitespace-pre-wrap break-words leading-6 w-full max-w-none" dir="ltr" style={{ textAlign: "left" }}>
+                      {result.career_recommendations.linkedin_improvements}
+                    </p>
                   </div>
                 )}
               </div>
             </div>
-          )}
+          ) : (
+            <div className="text-center py-16 space-y-3">
+              <Briefcase className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد توصيات مهنية في هذا التحليل." : "No career recommendations in this analysis."}</p>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white">
+                <BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}
+              </Button>
+            </div>
+          )
+        )}
 
-          {/* ── SALARY TAB ── */}
-          {activeTab === "salary" && hasSalary && (
-            <div className="rounded-2xl border border-border bg-card">
+        {/* ══════════ SALARY TAB ══════════ */}
+        {activeTab === "salary" && (
+          hasSalary ? (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
                   <DollarSign className="w-4 h-4 text-emerald-500" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-foreground">{t.analysis.salary}</h2>
-                  <p className="text-xs text-muted-foreground">{ar ? "تقديرات سوقية بناءً على مستواك" : "Market estimates based on your level"}</p>
+                  <p className="text-xs text-muted-foreground">{ar ? "تقديرات السوق السعودي بناءً على مستواك وخبراتك" : "Saudi market estimates calibrated to your level"}</p>
                 </div>
               </div>
               <div className="p-5 space-y-5">
                 {/* Negotiation numbers */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                   {[
-                    { label: ar ? "أدنى عرض" : "Offer Low", v: result.salary_estimation.offer_range_low, color: "text-muted-foreground" },
-                    { label: ar ? "أعلى عرض" : "Offer High", v: result.salary_estimation.offer_range_high, color: "text-foreground" },
-                    { label: t.analysis.negotiationTarget, v: result.salary_estimation.negotiation_target, color: "text-violet-600 dark:text-violet-400" },
-                    { label: ar ? "رقم الفتح" : "Anchor", v: result.salary_estimation.anchor, color: "text-amber-600" },
-                    { label: ar ? "حد القبول" : "Walk-Away", v: result.salary_estimation.walk_away, color: "text-red-500" },
-                  ].map(item => (
+                    { label: ar ? "أدنى عرض" : "Offer Low", v: result.salary_estimation.offer_range_low, cls: "text-muted-foreground" },
+                    { label: ar ? "أعلى عرض" : "Offer High", v: result.salary_estimation.offer_range_high, cls: "text-foreground font-extrabold" },
+                    { label: t.analysis.negotiationTarget, v: result.salary_estimation.negotiation_target, cls: "text-violet-600 dark:text-violet-400 font-extrabold" },
+                    { label: ar ? "رقم الفتح" : "Anchor", v: result.salary_estimation.anchor, cls: "text-amber-600 dark:text-amber-400" },
+                    { label: ar ? "حد القبول" : "Walk-Away", v: result.salary_estimation.walk_away, cls: "text-red-500" },
+                  ].map((item) => (
                     <div key={item.label} className="text-center p-4 bg-muted/30 rounded-xl border border-border">
-                      <p className="text-[10px] text-muted-foreground mb-1 font-medium">{item.label}</p>
-                      <p className={`text-base font-black tabular-nums ${item.color}`}>{item.v?.toLocaleString()}</p>
-                      <p className="text-[10px] text-muted-foreground">SAR</p>
+                      <p className="text-[10px] text-muted-foreground mb-1.5 font-medium">{item.label}</p>
+                      <p className={`text-lg font-black tabular-nums leading-none ${item.cls}`}>{item.v?.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">SAR/mo</p>
                     </div>
                   ))}
                 </div>
+                {/* Visual range bar */}
+                {result.salary_estimation.offer_range_low > 0 && result.salary_estimation.offer_range_high > 0 && (
+                  <div className="p-4 bg-muted/20 rounded-xl border border-border">
+                    <div className="flex justify-between text-[10px] text-muted-foreground mb-2">
+                      <span>{result.salary_estimation.walk_away?.toLocaleString()} SAR</span>
+                      <span className="font-bold text-violet-600">{result.salary_estimation.negotiation_target?.toLocaleString()} SAR</span>
+                      <span>{result.salary_estimation.anchor?.toLocaleString()} SAR</span>
+                    </div>
+                    <div className="relative h-3 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="absolute h-full bg-gradient-to-r from-emerald-500 to-violet-500 rounded-full"
+                        style={{
+                          left: `${Math.min(((result.salary_estimation.offer_range_low - result.salary_estimation.walk_away) /
+                            Math.max(result.salary_estimation.anchor - result.salary_estimation.walk_away, 1)) * 100, 100)}%`,
+                          width: `${Math.min(((result.salary_estimation.offer_range_high - result.salary_estimation.offer_range_low) /
+                            Math.max(result.salary_estimation.anchor - result.salary_estimation.walk_away, 1)) * 100, 60)}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 text-center">
+                      {ar ? "النطاق التفاوضي المقترح" : "Recommended negotiation range"}
+                    </p>
+                  </div>
+                )}
                 {/* Salary table */}
                 {hasArray(result.salary_estimation.salary_table) && (
                   <div className="overflow-x-auto rounded-xl border border-border">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-border bg-muted/30">
-                          {[ar ? "الدور" : "Role", ar ? "النطاق الشهري" : "Monthly Range", ar ? "متى الحد الأعلى؟" : "Upper Range When?", ar ? "ملاحظات" : "Notes"].map(h => (
+                          {[ar ? "الدور" : "Role", ar ? "النطاق الشهري" : "Monthly Range", ar ? "متى الحد الأعلى?" : "Upper Range When?", ar ? "ملاحظات السوق" : "Market Notes"].map((h) => (
                             <th key={h} className="text-start p-3 font-bold text-muted-foreground">{h}</th>
                           ))}
                         </tr>
@@ -2015,7 +2158,10 @@ const Analysis = () => {
                         {result.salary_estimation.salary_table.map((row, i) => (
                           <tr key={i} className="border-b border-border/40 hover:bg-muted/20 transition-colors">
                             <td className="p-3 font-semibold text-foreground">{row.role}</td>
-                            <td className="p-3 text-foreground font-mono">{row.monthly_range_low?.toLocaleString()} – {row.monthly_range_high?.toLocaleString()} <span className="text-muted-foreground text-[10px]">SAR</span></td>
+                            <td className="p-3 text-foreground font-mono tabular-nums">
+                              {row.monthly_range_low?.toLocaleString()} – {row.monthly_range_high?.toLocaleString()}
+                              <span className="text-muted-foreground text-[10px] ms-1">SAR</span>
+                            </td>
                             <td className="p-3 text-muted-foreground">{row.when_upper_range}</td>
                             <td className="p-3 text-muted-foreground">{row.notes}</td>
                           </tr>
@@ -2024,184 +2170,278 @@ const Analysis = () => {
                     </table>
                   </div>
                 )}
-                <p className="text-[10px] text-muted-foreground">{ar ? "⚠️ تقديرات سوقية عامة وليست مصادر مؤكدة." : "⚠️ General market estimates, not confirmed data."}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {ar ? "⚠️ تقديرات سوقية عامة — ليست ضمانات. تختلف حسب الجهة والمنطقة." : "⚠️ General market estimates, not guarantees. Vary by employer, city, and sector."}
+                </p>
               </div>
             </div>
-          )}
+          ) : (
+            <div className="text-center py-16 space-y-3">
+              <DollarSign className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات رواتب في هذا التحليل." : "No salary data in this analysis."}</p>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white">
+                <BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}
+              </Button>
+            </div>
+          )
+        )}
 
-          {/* ── RECRUITER TAB ── */}
-          {activeTab === "recruiter" && hasRecruiterAnalysis && (
-            <div className="rounded-2xl border border-border bg-card">
+        {/* ══════════ RECRUITER TAB ══════════ */}
+        {activeTab === "recruiter" && (
+          hasRecruiterAnalysis ? (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-blue-500/5 to-transparent">
-                <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
                   <Eye className="w-4 h-4 text-blue-500" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-foreground">{ar ? "منظور المجنّد" : "Recruiter Perspective"}</h2>
-                  <p className="text-xs text-muted-foreground">{ar ? "كيف تبدو سيرتك من زاوية مسؤول التوظيف" : "How your resume appears to a recruiter"}</p>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "منظور مسؤول التوظيف" : "Recruiter Perspective"}</h2>
+                  <p className="text-xs text-muted-foreground">{ar ? "كيف تبدو سيرتك من عيون المجنّد خلال أول 6 ثوانٍ" : "How your resume looks to a recruiter in the first 6 seconds"}</p>
                 </div>
               </div>
               <div className="p-5 space-y-3">
                 {Object.entries(result.recruiter_analysis)
                   .filter(([, data]) => normalizeScore(data.score) >= 0 && !isJunk(data.comment))
                   .map(([key, data]) => (
-                    <RecruiterItem key={key}
-                      label={recruiterLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
-                      score={normalizeScore(data.score)} comment={safeText(data.comment)} />
+                    <RecruiterItem
+                      key={key}
+                      label={recruiterLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      score={normalizeScore(data.score)}
+                      comment={safeText(data.comment)}
+                    />
                   ))}
               </div>
             </div>
-          )}
-
-          {/* ── IMPROVEMENTS TAB ── */}
-          {activeTab === "improvements" && hasQuickImprovements && (
-            <div className="rounded-2xl border border-amber-500/20 bg-card">
-              <div className="flex items-center gap-3 p-5 border-b border-amber-500/15 bg-gradient-to-r from-amber-500/5 to-transparent">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-foreground">{ar ? "قائمة التحسينات الكاملة" : "Full Improvements List"}</h2>
-                  <p className="text-xs text-muted-foreground">{ar ? "مرتبة حسب الأولوية — ابدأ من الأعلى" : "Sorted by priority — start from top"}</p>
-                </div>
-              </div>
-              <div className="p-5 space-y-2">
-                {dedupeList(result.quick_improvements.filter(i => !isJunk(i.description)).map(i => i.description))
-                  .map((desc, i) => {
-                    const item = result.quick_improvements.find(x => x.description === desc)!;
-                    return (
-                      <QuickImprovement key={i} priority={item.priority || "medium"} description={desc}
-                        actionStep={safeText(item.action_step)}
-                        actionLabel={ar ? "تطبيق في المحرر" : "Apply in Editor"}
-                        actionTo={buildEnhanceUrl(i === 0 ? "professionalSummary" : i === 1 ? "workExperience" : "skills")} />
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {/* ── INTERVIEW TAB ── */}
-          {activeTab === "interview" && hasInterviewQuestions && (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-border bg-card">
-                <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
-                  <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-violet-500" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-bold text-foreground">{ar ? "أسئلة المقابلة المتوقعة" : "Expected Interview Questions"}</h2>
-                    <p className="text-xs text-muted-foreground">{ar ? "أسئلة محتملة مع اتجاهات الإجابة" : "Likely questions with answer directions"}</p>
-                  </div>
-                </div>
-                <div className="p-5 space-y-3">
-                  {result.interview_questions.filter(q => !isJunk(q.question)).map((q, i) => (
-                    <InterviewQuestion key={i} index={i+1} question={q.question} direction={safeText(q.suggested_answer_direction)} />
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 border-violet-500/20 bg-violet-500/5">
-                <div>
-                  <p className="text-sm font-bold text-foreground">{ar ? "تدرّب مع المحاور الذكي" : "Practice with AI Avatar"}</p>
-                  <p className="text-xs text-muted-foreground">{ar ? "أجب بصوتك واحصل على تقييم فوري" : "Answer by voice and get instant evaluation"}</p>
-                </div>
-                <Button size="sm" asChild className="rounded-xl gap-1.5 bg-violet-600 hover:bg-violet-700 text-white flex-shrink-0">
-                  <Link to={`/dashboard/interview-avatar?analysis_id=${searchParams.get("id") || ""}&job_title=${encodeURIComponent(result.target_role || "")}&questions=${encodeURIComponent(JSON.stringify(result.interview_questions.filter(q => !isJunk(q.question)).slice(0, 10)))}`}>
-                    <MessageSquare className="w-3.5 h-3.5" />{ar ? "ابدأ المقابلة" : "Start Interview"}
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* ── ENHANCED CV TAB ── */}
-          {activeTab === "enhanced" && (
-            <div className="space-y-5">
-              <RewriteSummaryCard resume={storedResumeData} analysis={toRewriteSummaryProps(mapAnalysisResponse(result))} improvementSummary={priorityFixes.slice(0, 4).map(item => item.title)} />
-              <RewriteIssuesCard analysis={toRewriteIssuesProps(mapAnalysisResponse(result))} />
-              {/* Corrections */}
-              <div className="rounded-2xl border border-border bg-card">
-                <div className="flex items-center gap-3 p-5 border-b border-border/60">
-                  <CheckCircle2 className="w-4 h-4 text-violet-500" />
-                  <h2 className="text-sm font-bold text-foreground">{ar ? "مراجعة البيانات المستخرجة" : "Review Extracted Data"}</h2>
-                </div>
-                <div className="p-5 space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "الاسم الكامل" : "Full Name"}</label>
-                      <Input value={correctionsDraft.fullName} onChange={e => setCorrectionsDraft(prev => ({ ...prev, fullName: e.target.value }))} className="rounded-xl" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "المسمى المستهدف" : "Target Title"}</label>
-                      <Input value={correctionsDraft.title} onChange={e => setCorrectionsDraft(prev => ({ ...prev, title: e.target.value }))} className="rounded-xl" />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "معلومات التواصل" : "Contact Info"}</label>
-                    <Textarea rows={3} value={correctionsDraft.contact} onChange={e => setCorrectionsDraft(prev => ({ ...prev, contact: e.target.value }))} className="rounded-xl" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ar ? "الملخص المهني" : "Professional Summary"}</label>
-                    <Textarea rows={5} value={correctionsDraft.summary} onChange={e => setCorrectionsDraft(prev => ({ ...prev, summary: e.target.value }))} className="rounded-xl" />
-                  </div>
-                </div>
-              </div>
-              {/* Generate button */}
-              <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-indigo-500/5 p-6">
-                <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-foreground">{ar ? "السيرة الذاتية المحسنة" : "Enhanced Resume"}</h3>
-                    <p className="text-xs text-muted-foreground mt-1">{ar ? "نسخة ATS-friendly كاملة بناءً على تحليلك. التكلفة: 5 نقاط." : "Full ATS-friendly rewrite based on your analysis. Cost: 5 points."}</p>
-                  </div>
-                  <Button onClick={handleGenerateEnhancedResume} disabled={!storedResumeData || !result || rewriteLoading} size="lg" className="rounded-xl gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg shadow-violet-500/20 flex-shrink-0">
-                    {rewriteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                    {rewriteLoading ? (ar ? "جارٍ الإنشاء..." : "Generating...") : (ar ? "إنشاء السيرة المحسنة" : "Generate Enhanced Resume")}
-                  </Button>
-                </div>
-                {rewriteError && <p className="text-sm text-red-500 mt-3">{rewriteError}</p>}
-              </div>
-              {rewriteResult?.rewritten_resume && (
-                <RewriteReview originalText={storedResumeData?.raw_resume_text || ""} improvedText={rewriteResult.rewritten_resume} summary={rewriteResult.improvement_summary} />
-              )}
-            </div>
-          )}
-
-          {/* ── EMPTY STATES for tabs with no data ── */}
-          {activeTab === "career" && !hasCareer && (
-            <div className="text-center py-16 space-y-3">
-              <Briefcase className="w-10 h-10 text-muted-foreground/40 mx-auto" />
-              <p className="text-sm text-muted-foreground">{ar ? "لا توجد توصيات مهنية في هذا التحليل." : "No career recommendations in this analysis."}</p>
-              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
-            </div>
-          )}
-          {activeTab === "salary" && !hasSalary && (
-            <div className="text-center py-16 space-y-3">
-              <DollarSign className="w-10 h-10 text-muted-foreground/40 mx-auto" />
-              <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات رواتب في هذا التحليل." : "No salary data in this analysis."}</p>
-              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
-            </div>
-          )}
-          {activeTab === "recruiter" && !hasRecruiterAnalysis && (
+          ) : (
             <div className="text-center py-16 space-y-3">
               <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto" />
               <p className="text-sm text-muted-foreground">{ar ? "لا توجد بيانات تحليل المجند." : "No recruiter analysis data."}</p>
-              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white">
+                <BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}
+              </Button>
             </div>
-          )}
-          {activeTab === "improvements" && !hasQuickImprovements && (
+          )
+        )}
+
+        {/* ══════════ IMPROVEMENTS TAB ══════════ */}
+        {activeTab === "improvements" && (
+          hasQuickImprovements ? (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "قائمة التحسينات الكاملة" : "Full Improvements Checklist"}</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">{ar ? "اضغط المربع لتعليم البند كمنجز" : "Check items as you complete them"}</p>
+                </div>
+                <Button size="sm" asChild className="gap-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs h-8">
+                  <Link to={buildEnhanceUrl("professionalSummary")}>
+                    <Sparkles className="w-3.5 h-3.5" />{ar ? "تطبيق الكل بالمحرر" : "Apply All in Editor"}
+                  </Link>
+                </Button>
+              </div>
+
+              {groupedImprovements.high.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">{ar ? "أولوية عالية" : "High Priority"}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/12 text-red-600 border border-red-500/25 font-bold">{groupedImprovements.high.length}</span>
+                  </div>
+                  {groupedImprovements.high.map((item, i) => (
+                    <QuickImprovement
+                      key={`h-${i}`}
+                      priority="high"
+                      description={item.description}
+                      actionStep={safeText(item.action_step)}
+                      actionLabel={ar ? "تطبيق في المحرر" : "Apply in Editor"}
+                      actionTo={buildEnhanceUrl(i % 3 === 0 ? "professionalSummary" : i % 3 === 1 ? "workExperience" : "skills")}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {groupedImprovements.medium.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">{ar ? "أولوية متوسطة" : "Medium Priority"}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-600 border border-amber-500/25 font-bold">{groupedImprovements.medium.length}</span>
+                  </div>
+                  {groupedImprovements.medium.map((item, i) => (
+                    <QuickImprovement
+                      key={`m-${i}`}
+                      priority="medium"
+                      description={item.description}
+                      actionStep={safeText(item.action_step)}
+                      actionLabel={ar ? "تطبيق" : "Apply"}
+                      actionTo={buildEnhanceUrl(i % 2 === 0 ? "workExperience" : "skills")}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {groupedImprovements.low.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">{ar ? "أولوية منخفضة" : "Low Priority"}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-600 border border-emerald-500/25 font-bold">{groupedImprovements.low.length}</span>
+                  </div>
+                  {groupedImprovements.low.map((item, i) => (
+                    <QuickImprovement
+                      key={`l-${i}`}
+                      priority="low"
+                      description={item.description}
+                      actionStep={safeText(item.action_step)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
             <div className="text-center py-16 space-y-3">
               <Sparkles className="w-10 h-10 text-muted-foreground/40 mx-auto" />
               <p className="text-sm text-muted-foreground">{ar ? "لا توجد تحسينات محددة." : "No specific improvements found."}</p>
             </div>
-          )}
-          {activeTab === "interview" && !hasInterviewQuestions && (
+          )
+        )}
+
+        {/* ══════════ INTERVIEW TAB ══════════ */}
+        {activeTab === "interview" && (
+          hasInterviewQuestions ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
+                  <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
+                    <MessageSquare className="w-4 h-4 text-violet-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground">{ar ? "أسئلة المقابلة المتوقعة" : "Expected Interview Questions"}</h2>
+                    <p className="text-xs text-muted-foreground">{ar ? "اضغط على السؤال لعرض اتجاه الإجابة المقترح" : "Click any question to reveal the suggested answer direction"}</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-2.5">
+                  {result.interview_questions
+                    .filter((q) => !isJunk(q.question))
+                    .map((q, i) => (
+                      <InterviewQuestion key={i} index={i + 1} question={q.question} direction={safeText(q.suggested_answer_direction)} />
+                    ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl border-2 border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-indigo-500/5">
+                <div>
+                  <p className="text-sm font-bold text-foreground">{ar ? "تدرّب مع المحاور الذكي" : "Practice with AI Avatar"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{ar ? "أجب بصوتك واحصل على تقييم فوري" : "Answer by voice and get real-time feedback"}</p>
+                </div>
+                <Button
+                  size="sm"
+                  asChild
+                  className="rounded-xl gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white flex-shrink-0 shadow-sm"
+                >
+                  <Link to={`/dashboard/interview-avatar?analysis_id=${searchParams.get("id") || ""}&job_title=${encodeURIComponent(result.target_role || "")}&questions=${encodeURIComponent(JSON.stringify(result.interview_questions.filter((q) => !isJunk(q.question)).slice(0, 10)))}`}>
+                    <MessageSquare className="w-3.5 h-3.5" />{ar ? "ابدأ المقابلة التدريبية" : "Start Practice Interview"}
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
             <div className="text-center py-16 space-y-3">
               <MessageSquare className="w-10 h-10 text-muted-foreground/40 mx-auto" />
               <p className="text-sm text-muted-foreground">{ar ? "لا توجد أسئلة مقابلة في هذا التحليل." : "No interview questions in this analysis."}</p>
-              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white"><BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}</Button>
+              <Button size="sm" onClick={handleRetrySelectedResume} className="rounded-xl gap-2 bg-violet-600 hover:bg-violet-700 text-white">
+                <BarChart3 className="w-4 h-4" />{ar ? "إعادة التحليل" : "Re-analyze"}
+              </Button>
             </div>
-          )}
+          )
+        )}
 
-        </div>
+        {/* ══════════ ENHANCED CV TAB ══════════ */}
+        {activeTab === "enhanced" && (
+          <div className="space-y-5">
+            <RewriteSummaryCard
+              resume={storedResumeData}
+              analysis={toRewriteSummaryProps(mapAnalysisResponse(result))}
+              improvementSummary={priorityFixes.slice(0, 4).map((item) => item.title)}
+            />
+            <RewriteIssuesCard analysis={toRewriteIssuesProps(mapAnalysisResponse(result))} />
+
+            {/* Data corrections */}
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-5 border-b border-border/60">
+                <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-violet-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "مراجعة البيانات المستخرجة" : "Review Extracted Data"}</h2>
+                  <p className="text-xs text-muted-foreground">{ar ? "تأكد من صحة هذه البيانات قبل التوليد" : "Verify these before generating the enhanced resume"}</p>
+                </div>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{ar ? "الاسم الكامل" : "Full Name"}</label>
+                    <Input value={correctionsDraft.fullName} onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, fullName: e.target.value }))} className="rounded-xl" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{ar ? "المسمى المستهدف" : "Target Title"}</label>
+                    <Input value={correctionsDraft.title} onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, title: e.target.value }))} className="rounded-xl" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{ar ? "معلومات التواصل" : "Contact Info"}</label>
+                  <Textarea rows={2} value={correctionsDraft.contact} onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, contact: e.target.value }))} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{ar ? "الملخص المهني" : "Professional Summary"}</label>
+                  <Textarea rows={4} value={correctionsDraft.summary} onChange={(e) => setCorrectionsDraft((prev) => ({ ...prev, summary: e.target.value }))} className="rounded-xl" />
+                </div>
+              </div>
+            </div>
+
+            {/* Generate CTA */}
+            <div className="relative rounded-2xl border-2 border-violet-500/30 bg-gradient-to-br from-violet-500/8 via-background to-indigo-500/5 p-6 overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-violet-500/8 rounded-full blur-3xl pointer-events-none" />
+              <div className="relative flex flex-col md:flex-row md:items-center gap-5 justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Wand2 className="w-5 h-5 text-violet-500" />
+                    <h3 className="text-base font-extrabold text-foreground">{ar ? "السيرة الذاتية المحسنة بالذكاء الاصطناعي" : "AI-Enhanced Resume"}</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed max-w-sm">
+                    {ar
+                      ? "نسخة كاملة محسّنة لـ ATS تعالج كل نقطة ضعف محددة في التحليل. التكلفة: 5 نقاط."
+                      : "Full ATS-optimized rewrite addressing every weakness identified in your analysis. Cost: 5 points."}
+                  </p>
+                  {groupedImprovements.high.length > 0 && (
+                    <p className="text-xs text-violet-600 dark:text-violet-400 font-medium">
+                      {ar
+                        ? `سيعالج ${groupedImprovements.high.length} مشكلة ذات أولوية عالية تلقائياً`
+                        : `Will automatically fix ${groupedImprovements.high.length} high-priority issue${groupedImprovements.high.length !== 1 ? "s" : ""}`}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  onClick={handleGenerateEnhancedResume}
+                  disabled={!storedResumeData || !result || rewriteLoading}
+                  size="lg"
+                  className="rounded-xl gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg shadow-violet-500/25 flex-shrink-0"
+                >
+                  {rewriteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                  {rewriteLoading ? (ar ? "جارٍ التوليد..." : "Generating...") : (ar ? "توليد السيرة المحسنة" : "Generate Enhanced Resume")}
+                </Button>
+              </div>
+              {rewriteError && <p className="text-sm text-red-500 mt-3 relative">{rewriteError}</p>}
+            </div>
+
+            {rewriteResult?.rewritten_resume && (
+              <RewriteReview
+                originalText={storedResumeData?.raw_resume_text || ""}
+                improvedText={rewriteResult.rewritten_resume}
+                summary={rewriteResult.improvement_summary}
+              />
+            )}
+          </div>
+        )}
+
+        {/* ── Bottom spacer ── */}
+        <div className="h-8" />
       </main>
 
       <InsufficientPointsDialog open={showInsufficientPoints} onClose={() => setShowInsufficientPoints(false)} ar={ar} />
