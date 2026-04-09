@@ -1332,6 +1332,7 @@ const Analysis = () => {
     result?.quick_improvements?.filter((i) => hasText(i.description) || hasText(i.action_step)) || [],
   );
   const hasInterviewQuestions = hasArray(result?.interview_questions?.filter((q) => hasText(q.question)) || []);
+  const ar = language === "ar";
   const extractedText = cleanCombinedField(storedResumeData?.raw_resume_text || "");
   const extractedSections = useMemo(() => {
     const structured = storedResumeData?.structured_resume_json || {};
@@ -1614,8 +1615,6 @@ const Analysis = () => {
   }
 
   /* ══════════════════ REPORT VIEW ══════════════════ */
-  const ar = language === "ar";
-
   const mainTabs = [
     { id: "extracted" as const, labelAr: "النص المستخرج", labelEn: "Extracted Text", icon: FileText },
     { id: "overview" as const, labelAr: "تقرير التحليل", labelEn: "Full Analysis", icon: BarChart3 },
