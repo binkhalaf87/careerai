@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -432,7 +431,7 @@ const Analysis = () => {
     loading: loadingStoredAnalysis,
     error: storedAnalysisError,
   } = useAnalysis(resumeId);
-  const { rewrite, result: rewriteResult, loading: rewriteLoading, error: rewriteError } = useRewriteResume();
+  const { result: rewriteResult, loading: rewriteLoading, error: rewriteError } = useRewriteResume();
 
   const hasText = (v?: string | null) => !!String(v || "").trim();
   const hasArray = (v?: unknown[]) => Array.isArray(v) && v.length > 0;
@@ -1128,8 +1127,9 @@ const Analysis = () => {
 
   useEffect(() => {
     if (!requestedTab) return;
-    const allowedTabs = ["overview", "ats", "career", "salary", "recruiter", "improvements", "interview"];
-    setActiveTab(allowedTabs.includes(requestedTab) ? requestedTab : "overview");
+    const normalizedTab = requestedTab === "text" ? "extracted" : requestedTab;
+    const allowedTabs = ["overview", "extracted"];
+    setActiveTab(allowedTabs.includes(normalizedTab) ? normalizedTab : "overview");
   }, [requestedTab]);
 
   useEffect(() => {
@@ -1332,6 +1332,63 @@ const Analysis = () => {
     result?.quick_improvements?.filter((i) => hasText(i.description) || hasText(i.action_step)) || [],
   );
   const hasInterviewQuestions = hasArray(result?.interview_questions?.filter((q) => hasText(q.question)) || []);
+  const extractedText = cleanCombinedField(storedResumeData?.raw_resume_text || "");
+  const extractedSections = useMemo(() => {
+    const structured = storedResumeData?.structured_resume_json || {};
+    return [
+      {
+        key: "fullName",
+        label: ar ? "الاسم" : "Name",
+        value: getFirstFilled(structured.fullName, structured.full_name, structured.name, correctionsDraft.fullName),
+      },
+      {
+        key: "jobTitle",
+        label: ar ? "المسمى المستهدف" : "Target Title",
+        value: getFirstFilled(
+          structured.jobTitle,
+          structured.job_title,
+          structured.title,
+          storedResumeData?.detected_job_title,
+          correctionsDraft.title,
+        ),
+      },
+      {
+        key: "contact",
+        label: ar ? "معلومات التواصل" : "Contact Info",
+        value: cleanCombinedField(
+          getFirstFilled(structured.contactInfo, structured.contact_info, structured.contact, correctionsDraft.contact),
+        ),
+      },
+      {
+        key: "summary",
+        label: ar ? "الملخص المهني" : "Professional Summary",
+        value: cleanCombinedField(
+          getFirstFilled(
+            structured.professionalSummary,
+            structured.professional_summary,
+            structured.summary,
+            structured.profile,
+            correctionsDraft.summary,
+          ),
+        ),
+      },
+      {
+        key: "experience",
+        label: ar ? "الخبرات" : "Work Experience",
+        value: cleanCombinedField(getFirstFilled(structured.workExperience, structured.work_experience, structured.experience)),
+      },
+      {
+        key: "skills",
+        label: ar ? "المهارات" : "Skills",
+        value: cleanCombinedField(getFirstFilled(structured.skills, structured.key_skills)),
+      },
+      {
+        key: "education",
+        label: ar ? "التعليم" : "Education",
+        value: cleanCombinedField(getFirstFilled(structured.education)),
+      },
+    ].filter((section) => hasText(section.value));
+  }, [storedResumeData, correctionsDraft, ar]);
 
   /* ── Grouped improvements by priority (must be before any conditional return) ── */
   const groupedImprovements = useMemo(() => {
@@ -1559,17 +1616,10 @@ const Analysis = () => {
   /* ══════════════════ REPORT VIEW ══════════════════ */
   const ar = language === "ar";
 
-  // ── Report tabs config ──
-  const reportTabs = [
-    { id: "overview",     labelAr: "ملخص", labelEn: "Overview",    icon: BarChart3 },
-    { id: "ats",          labelAr: "تفاصيل ATS", labelEn: "ATS Details", icon: ListChecks },
-    { id: "career",       labelAr: "التوصيات", labelEn: "Career",   icon: Briefcase },
-    { id: "salary",       labelAr: "الرواتب", labelEn: "Salary",   icon: DollarSign },
-    { id: "recruiter",    labelAr: "نظرة المجند", labelEn: "Recruiter", icon: Eye },
-    { id: "improvements", labelAr: "التحسينات", labelEn: "Fixes",  icon: Zap },
-    { id: "interview",    labelAr: "المقابلة", labelEn: "Interview", icon: MessageSquare },
-  ] as const;
-  type ReportTab = (typeof reportTabs)[number]["id"];
+  const mainTabs = [
+    { id: "extracted" as const, labelAr: "النص المستخرج", labelEn: "Extracted Text", icon: FileText },
+    { id: "overview" as const, labelAr: "تقرير التحليل", labelEn: "Full Analysis", icon: BarChart3 },
+  ];
 
   const handleGenerateEnhancedResume = async () => {
     if (!resumeId || !storedResumeData || !result) {
@@ -1745,19 +1795,37 @@ const Analysis = () => {
       {/* ══════════════════ TAB NAV ══════════════════ */}
       <div className="sticky top-14 z-20 bg-background/95 backdrop-blur-md border-b border-border/60">
         <div className="container max-w-6xl px-4">
-          <div className="flex gap-0.5 overflow-x-auto scrollbar-hide">
-            {reportTabs.map(({ id, labelAr, labelEn, icon: Icon }) => (
+          <div className="grid gap-3 py-4 md:grid-cols-2">
+            {mainTabs.map(({ id, labelAr, labelEn, icon: Icon }, index) => (
               <button
                 key={id}
-                onClick={() => setActiveTab(id as any)}
-                className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold whitespace-nowrap border-b-2 transition-all flex-shrink-0
+                onClick={() => setActiveTab(id)}
+                className={`flex items-center gap-3 rounded-2xl border px-4 py-4 text-start transition-all
                   ${activeTab === id
-                    ? "border-violet-500 text-violet-600 dark:text-violet-400"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
+                    ? "border-violet-500 bg-violet-500/8 shadow-sm shadow-violet-500/10"
+                    : "border-border bg-card hover:border-violet-300 hover:bg-violet-500/5"
                   }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                {ar ? labelAr : labelEn}
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl border
+                  ${activeTab === id
+                    ? "border-violet-500/30 bg-violet-500/12 text-violet-600 dark:text-violet-400"
+                    : "border-border bg-background text-muted-foreground"
+                  }`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[11px] font-black uppercase tracking-widest ${activeTab === id ? "text-violet-600 dark:text-violet-400" : "text-muted-foreground"}`}>
+                      {index + 1}
+                    </span>
+                    <span className="text-sm font-bold text-foreground">{ar ? labelAr : labelEn}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {id === "extracted"
+                      ? (ar ? "راجع النص المستخرج قبل الاعتماد على أي تحليل." : "Review the extracted resume text before trusting the analysis.")
+                      : (ar ? "تقرير واحد موحد يجمع كل نتائج التحليل بدون تبويبات فرعية." : "One unified report that combines all analysis results without sub-tabs.")}
+                  </p>
+                </div>
               </button>
             ))}
           </div>
@@ -1766,6 +1834,59 @@ const Analysis = () => {
 
       {/* ══════════════════ TAB PANELS ══════════════════ */}
       <main className="container max-w-6xl py-6 px-4 space-y-5">
+        {activeTab === "extracted" && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
+                <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4 text-violet-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "مراجعة النص المستخرج" : "Review Extracted Text"}</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {ar
+                      ? "هذه هي البيانات التي بُني عليها التحليل. إذا كانت غير دقيقة فسيؤثر ذلك على التقرير بالكامل."
+                      : "This is the content the analysis was built from. If it is inaccurate, the full report will be affected."}
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 p-5 md:grid-cols-2">
+                {extractedSections.length > 0 ? extractedSections.map((section) => (
+                  <div key={section.key} className={`rounded-xl border border-border bg-background/60 p-4 ${section.key === "experience" || section.key === "summary" ? "md:col-span-2" : ""}`}>
+                    <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-muted-foreground">{section.label}</p>
+                    <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90">{section.value}</p>
+                  </div>
+                )) : (
+                  <div className="md:col-span-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-muted-foreground">
+                    {ar ? "لم نتمكن من تقسيم النص المستخرج إلى أقسام واضحة، لكن يمكنك مراجعة النص الخام أدناه." : "We could not split the extracted text into clear sections, but you can still review the raw text below."}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center justify-between gap-3 border-b border-border/60 p-5">
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "النص الخام المستخرج" : "Raw Extracted Text"}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {ar ? "راجع هذا النص لاكتشاف أي مشاكل OCR أو أجزاء ناقصة قبل الاعتماد على التحليل." : "Inspect this text for OCR issues or missing sections before relying on the analysis."}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("overview")} className="rounded-xl gap-2">
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  {ar ? "الانتقال إلى التقرير" : "Open Analysis"}
+                </Button>
+              </div>
+              <div className="p-5">
+                <div className="rounded-xl border border-border bg-muted/20 p-4">
+                  <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-foreground/90">
+                    {extractedText || (ar ? "لم يتم العثور على نص مستخرج لهذا الملف بعد." : "No extracted text was found for this file yet.")}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* ══════════ OVERVIEW TAB ══════════ */}
         {activeTab === "overview" && (
           <div className="space-y-5">
@@ -1896,8 +2017,10 @@ const Analysis = () => {
                       <p className="text-xs text-muted-foreground">{ar ? "ابدأ بهذه النقاط لأكبر تأثير على نتيجة ATS" : "Start here for maximum ATS score impact"}</p>
                     </div>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => setActiveTab("improvements" as any)} className="text-xs rounded-xl gap-1 text-muted-foreground">
-                    {ar ? "عرض الكل" : "View all"}<ChevronRight className="w-3 h-3" />
+                  <Button size="sm" variant="ghost" asChild className="text-xs rounded-xl gap-1 text-muted-foreground">
+                    <Link to={buildEnhanceUrl(priorityFixes[0]?.focus || "professionalSummary")}>
+                      {ar ? "الفتح في المحرر" : "Open in Editor"}<ChevronRight className="w-3 h-3" />
+                    </Link>
                   </Button>
                 </div>
                 <div className="p-5 grid md:grid-cols-3 gap-3">
@@ -1949,7 +2072,7 @@ const Analysis = () => {
         )}
 
         {/* ══════════ ATS TAB ══════════ */}
-        {activeTab === "ats" && (
+        {activeTab === "overview" && (
           <div className="space-y-5">
             {hasObject(result.section_scores) && (
               <div className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -2023,7 +2146,7 @@ const Analysis = () => {
         )}
 
         {/* ══════════ CAREER TAB ══════════ */}
-        {activeTab === "career" && (
+        {activeTab === "overview" && (
           hasCareer ? (
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
@@ -2123,7 +2246,7 @@ const Analysis = () => {
         )}
 
         {/* ══════════ SALARY TAB ══════════ */}
-        {activeTab === "salary" && (
+        {activeTab === "overview" && (
           hasSalary ? (
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-emerald-500/5 to-transparent">
@@ -2220,7 +2343,7 @@ const Analysis = () => {
         )}
 
         {/* ══════════ RECRUITER TAB ══════════ */}
-        {activeTab === "recruiter" && (
+        {activeTab === "overview" && (
           hasRecruiterAnalysis ? (
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-blue-500/5 to-transparent">
@@ -2257,7 +2380,7 @@ const Analysis = () => {
         )}
 
         {/* ══════════ IMPROVEMENTS TAB ══════════ */}
-        {activeTab === "improvements" && (
+        {activeTab === "overview" && (
           hasQuickImprovements ? (
             <div className="space-y-5">
               <div className="flex items-center justify-between">
@@ -2336,7 +2459,7 @@ const Analysis = () => {
         )}
 
         {/* ══════════ INTERVIEW TAB ══════════ */}
-        {activeTab === "interview" && (
+        {activeTab === "overview" && (
           hasInterviewQuestions ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-border bg-card overflow-hidden">
