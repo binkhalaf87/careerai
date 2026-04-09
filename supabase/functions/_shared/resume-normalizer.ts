@@ -335,6 +335,23 @@ function sectionToText(value: string[] | string | null | undefined): string {
   return value.trim();
 }
 
+function trimParagraph(text: string, maxLength = 900): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength).trim()}...`;
+}
+
+function formatPromptSection(title: string, value: string[] | string | null | undefined): string {
+  if (!value) return "";
+  if (Array.isArray(value)) {
+    const items = uniqueStrings(value).slice(0, 12);
+    if (!items.length) return "";
+    return `${title}:\n${items.map((item) => `- ${item}`).join("\n")}`;
+  }
+  const text = trimParagraph(String(value));
+  return text ? `${title}:\n${text}` : "";
+}
+
 export function prepareTextForPrompt(normalized: NormalizedResumeInput): string {
   const parts: string[] = [];
   const weakStructure = normalized.skills.length < 3 || normalized.experience.length < 1;

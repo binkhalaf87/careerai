@@ -24,6 +24,23 @@ import { validateAiOutput, buildRetryPrefix, VALIDATION } from "./output-validat
 
 export const ANALYSIS_MODEL = "gemini-2.5-flash" as const;
 
+function buildPreparedResumeText(resumeText: string): string {
+  const lines = Array.from(
+    new Set(
+      String(resumeText || "")
+        .split("\n")
+        .map((line) => line.replace(/\s+/g, " ").trim())
+        .filter((line) => line.length >= 3),
+    ),
+  );
+
+  const prioritized = lines.filter((line) =>
+    /name:|target title:|professional summary:|work experience:|skills:|education:|certifications:/i.test(line),
+  );
+  const remaining = lines.filter((line) => !prioritized.includes(line));
+  return [...prioritized, ...remaining].slice(0, 80).join("\n");
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SectionScores {
@@ -785,6 +802,42 @@ export function buildPrompt(
 
   const today = new Date().toISOString().split("T")[0];
 
+  const simpleSystemPrompt = `You are TALENTRY's resume analysis engine for Saudi Arabia and the GCC.
+${langInstruction}
+Return the response only through the submit_analysis tool schema.
+Use only evidence that exists in the resume text.
+Do not invent achievements, dates, certifications, or job titles.
+If a fact is unclear, write "[Please confirm]" in English or "[يرجى التأكيد]" in Arabic.
+Do not include markdown, code fences, or extra prose outside the schema.
+Do not include numeric scores in the tool output because those come from the deterministic ATS engine.
+Keep every field concise, specific, and recruiter-friendly.`;
+
+  const simpleUserPrompt = `Analyze this cleaned resume text for a Saudi/GCC hiring context.
+Today: ${today}
+
+Resume Text:
+${resumeText.trim()}
+
+${engineScores ? `Deterministic ATS context:
+- Overall ATS score: ${engineScores.ats_score}/100
+- Candidate level: ${engineScores.candidate_level}
+- Years detected: ${engineScores.years_of_experience}
+- Missing sections: ${engineScores.missing_sections.length ? engineScores.missing_sections.join(", ") : "none"}
+- Keyword hints: ${engineScores.keywords_missing_hints.slice(0, 8).join(", ") || "none"}
+
+Use these ATS values as final numeric truth.
+Your job is to write the narrative explanation, role fit, salary guidance, rewrite, improvements, and interview questions.` : ""}
+
+Focus on:
+1. A short executive summary with clear strengths and risks.
+2. Specific ATS breakdown narratives tied to the actual resume text.
+3. Concrete Saudi/GCC job-fit recommendations.
+4. Actionable quick improvements that name the exact section to fix.
+5. A complete English resume rewrite using only facts already present in the input.
+6. Interview questions that match the candidate's profile and target role.`;
+
+  return { systemPrompt: simpleSystemPrompt, userPrompt: simpleUserPrompt };
+
   // ── SYSTEM PROMPT ────────────────────────────────────────────────────────────
   const systemPrompt = `\
 You are TALENTRY's official ATS Analysis Engine — a Senior Recruitment Director and Certified ATS Specialist \
@@ -1119,7 +1172,7 @@ export async function callAnalysisAI(opts: CallAnalysisOptions): Promise<CallAna
   const deterministicScores = computeAtsScores(normalizedInput, rawText);
 
   // ── Prepare cleaned text for AI prompt injection ────────────────────────────
-  const preparedText = prepareTextForPrompt(normalizedInput);
+  const preparedText = buildPreparedResumeText(prepareTextForPrompt(normalizedInput));
 
   // ── Layer B: Build base prompt ─────────────────────────────────────────────
   const { systemPrompt, userPrompt } = buildPrompt(preparedText, language, deterministicScores);

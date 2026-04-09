@@ -412,9 +412,11 @@ const Analysis = () => {
   const autoAnalyzeInFlightRef = useRef(false);
   const autoAnalyzeRequestKeyRef = useRef<string | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("overview");
   const [correctionsDraft, setCorrectionsDraft] = useState({ fullName: "", title: "", contact: "", summary: "" });
   const [showInsufficientPoints, setShowInsufficientPoints] = useState(false);
+  const activeTab = "overview";
+  const setActiveTab = (_tab: string) => {};
+  const mainTabs: Array<{ id: string; labelAr: string; labelEn: string; icon: typeof FileText }> = [];
   const { user } = useAuth();
   const { t, language } = useLanguage();
   const [searchParams] = useSearchParams();
@@ -424,7 +426,6 @@ const Analysis = () => {
   const reviewAnalysisId = searchParams.get("review");
   const resumeId = searchParams.get("id");
   const analysisRunKey = `${resumeId ?? ""}:${reviewAnalysisId ?? ""}`;
-  const requestedTab = searchParams.get("tab");
   const { data: storedResumeData } = useUserResume(resumeId);
   const {
     analysis: latestStoredAnalysis,
@@ -1126,13 +1127,6 @@ const Analysis = () => {
   };
 
   useEffect(() => {
-    if (!requestedTab) return;
-    const normalizedTab = requestedTab === "text" ? "extracted" : requestedTab;
-    const allowedTabs = ["overview", "extracted"];
-    setActiveTab(allowedTabs.includes(normalizedTab) ? normalizedTab : "overview");
-  }, [requestedTab]);
-
-  useEffect(() => {
     const structured = storedResumeData?.structured_resume_json || {};
     setCorrectionsDraft({
       fullName: getFirstFilled(structured.fullName, structured.full_name, structured.name),
@@ -1390,6 +1384,13 @@ const Analysis = () => {
       },
     ].filter((section) => hasText(section.value));
   }, [storedResumeData, correctionsDraft, ar]);
+  const improvedExtractedText = useMemo(() => {
+    if (extractedSections.length === 0) return extractedText;
+    return extractedSections
+      .map((section) => `${section.label}\n${section.value}`)
+      .join("\n\n")
+      .trim();
+  }, [extractedSections, extractedText]);
 
   /* ── Grouped improvements by priority (must be before any conditional return) ── */
   const groupedImprovements = useMemo(() => {
@@ -1615,11 +1616,6 @@ const Analysis = () => {
   }
 
   /* ══════════════════ REPORT VIEW ══════════════════ */
-  const mainTabs = [
-    { id: "extracted" as const, labelAr: "النص المستخرج", labelEn: "Extracted Text", icon: FileText },
-    { id: "overview" as const, labelAr: "تقرير التحليل", labelEn: "Full Analysis", icon: BarChart3 },
-  ];
-
   const handleGenerateEnhancedResume = async () => {
     if (!resumeId || !storedResumeData || !result) {
       toast.error(ar ? "لا توجد بيانات كافية" : "Not enough data");
@@ -1792,7 +1788,7 @@ const Analysis = () => {
       </div>
 
       {/* ══════════════════ TAB NAV ══════════════════ */}
-      <div className="sticky top-14 z-20 bg-background/95 backdrop-blur-md border-b border-border/60">
+      <div className="hidden sticky top-14 z-20 bg-background/95 backdrop-blur-md border-b border-border/60">
         <div className="container max-w-6xl px-4">
           <div className="grid gap-3 py-4 md:grid-cols-2">
             {mainTabs.map(({ id, labelAr, labelEn, icon: Icon }, index) => (
@@ -1833,7 +1829,7 @@ const Analysis = () => {
 
       {/* ══════════════════ TAB PANELS ══════════════════ */}
       <main className="container max-w-6xl py-6 px-4 space-y-5">
-        {activeTab === "extracted" && (
+        {false && (
           <div className="space-y-5">
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-violet-500/5 to-transparent">
@@ -1889,6 +1885,41 @@ const Analysis = () => {
         {/* ══════════ OVERVIEW TAB ══════════ */}
         {activeTab === "overview" && (
           <div className="space-y-5">
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-5 border-b border-border/60 bg-gradient-to-r from-sky-500/5 to-transparent">
+                <div className="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4 text-sky-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{ar ? "النص المستخرج والمحسن" : "Improved Extracted Text"}</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {ar
+                      ? "هذا هو النص المنظم الذي بُني عليه التقرير. راجعه أولاً لأنه المصدر الأساسي لكل الملاحظات التالية."
+                      : "This cleaned and structured text is the foundation of the full report below."}
+                  </p>
+                </div>
+              </div>
+              <div className="p-5 space-y-4">
+                {extractedSections.length > 0 && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {extractedSections.map((section) => (
+                      <div key={section.key} className={`rounded-xl border border-border bg-background/60 p-4 ${section.key === "experience" || section.key === "summary" ? "md:col-span-2" : ""}`}>
+                        <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-muted-foreground">{section.label}</p>
+                        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90">{section.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="rounded-xl border border-border bg-muted/20 p-4">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-muted-foreground">
+                    {ar ? "النص النهائي المنظف" : "Final Cleaned Text"}
+                  </p>
+                  <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-foreground/90">
+                    {improvedExtractedText || extractedText || (ar ? "لم يتم العثور على نص مستخرج لهذا الملف بعد." : "No extracted text was found for this file yet.")}
+                  </pre>
+                </div>
+              </div>
+            </div>
 
             {/* Executive Summary */}
             {result.executive_summary && (
